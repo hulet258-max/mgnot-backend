@@ -30,16 +30,24 @@ let socketAdapterClients = [];
 let bot;
 let botLaunchPromise;
 
+const localAdminOrigins = [
+  "http://localhost:3006",
+  "http://localhost:3007",
+  "http://127.0.0.1:3006",
+  "http://127.0.0.1:3007",
+];
 const allowedOrigins = [
   process.env.CORS_ORIGIN,
   process.env.WEB_APP_URL,
   process.env.FRONTEND_URL,
+  localAdminOrigins.join(","),
 ]
   .filter(Boolean)
   .join(",")
   .split(",")
   .map((origin) => origin.trim().replace(/\/$/, ""))
-  .filter(Boolean);
+  .filter(Boolean)
+  .filter((origin, index, origins) => origins.indexOf(origin) === index);
 
 console.log("Allowed frontend origins:", allowedOrigins.length ? allowedOrigins : "any");
 
