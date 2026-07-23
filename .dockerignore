@@ -1,0 +1,10 @@
+node_modules
+server/node_modules
+dep
+*.zip
+server/*.zip
+server/src/config/.env
+server/src/bot/.env
+.git
+.gitignore
+npm-debug.log

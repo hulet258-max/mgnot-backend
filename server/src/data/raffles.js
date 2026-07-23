@@ -1,0 +1,198 @@
+const hoursFromNow = (hours) => new Date(Date.now() + (hours * 60 * 60 * 1000)).toISOString();
+const DRAW_SCHEDULE_VERSION = 2;
+
+const DEFAULT_RAFFLES = [
+  {
+    id: "iphone-15-pro-max",
+    itemName: "iPhone 15 Pro Max",
+    shortDescription: "A premium 256 GB smartphone in excellent condition.",
+    description: "Win an iPhone 15 Pro Max with a bright 6.7-inch display, titanium design, advanced camera system, and all-day battery life. The item includes its original box and charging cable.",
+    condition: "Excellent",
+    estimatedValue: 165000,
+    ticketPrice: 50,
+    ticketLimit: 500,
+    drawAt: hoursFromNow(6),
+    drawScheduleVersion: DRAW_SCHEDULE_VERSION,
+    status: "open",
+    coverImageUrl: "https://images.unsplash.com/photo-1695048133142-1a20484d2569?auto=format&fit=crop&w=1200&q=80",
+    galleryImageUrls: [
+      "https://images.unsplash.com/photo-1695048133142-1a20484d2569?auto=format&fit=crop&w=1200&q=80",
+      "https://images.unsplash.com/photo-1511707171634-5f897ff02aa9?auto=format&fit=crop&w=1200&q=80"
+    ],
+    specifications: ["256 GB storage", "6.7-inch display", "Titanium body", "Original box included"],
+    provider: { name: "MGNOT Mobile", phone: "+251 91 100 2000", location: "Bole, Addis Ababa" },
+    reservedCount: 0,
+    assignedCount: 0
+  },
+  {
+    id: "samsung-55-tv",
+    itemName: "Samsung 55-inch 4K Smart TV",
+    shortDescription: "A cinematic 4K television with built-in streaming apps.",
+    description: "Bring the cinema home with a 55-inch 4K UHD Smart TV. It includes the remote, table stand, wall-mount compatibility, Wi-Fi, and popular streaming applications.",
+    condition: "New",
+    estimatedValue: 95000,
+    ticketPrice: 30,
+    ticketLimit: 700,
+    drawAt: hoursFromNow(30),
+    drawScheduleVersion: DRAW_SCHEDULE_VERSION,
+    status: "open",
+    coverImageUrl: "https://images.unsplash.com/photo-1593359677879-a4bb92f829d1?auto=format&fit=crop&w=1200&q=80",
+    galleryImageUrls: [
+      "https://images.unsplash.com/photo-1593359677879-a4bb92f829d1?auto=format&fit=crop&w=1200&q=80",
+      "https://images.unsplash.com/photo-1461151304267-38535e780c79?auto=format&fit=crop&w=1200&q=80"
+    ],
+    specifications: ["55-inch 4K UHD", "Smart TV apps", "Wi-Fi connectivity", "Remote included"],
+    provider: { name: "MGNOT Electronics", phone: "+251 91 100 3000", location: "Megenagna, Addis Ababa" },
+    reservedCount: 0,
+    assignedCount: 0
+  },
+  {
+    id: "lenovo-ideapad-5",
+    itemName: "Lenovo IdeaPad 5 Laptop",
+    shortDescription: "A lightweight everyday laptop for work and study.",
+    description: "A fast and portable Lenovo IdeaPad 5 suitable for office work, study, browsing, and entertainment. The winner receives the laptop, charger, and protective sleeve.",
+    condition: "Like new",
+    estimatedValue: 78000,
+    ticketPrice: 25,
+    ticketLimit: 400,
+    drawAt: hoursFromNow(36),
+    drawScheduleVersion: DRAW_SCHEDULE_VERSION,
+    status: "open",
+    coverImageUrl: "https://images.unsplash.com/photo-1496181133206-80ce9b88a853?auto=format&fit=crop&w=1200&q=80",
+    galleryImageUrls: [
+      "https://images.unsplash.com/photo-1496181133206-80ce9b88a853?auto=format&fit=crop&w=1200&q=80",
+      "https://images.unsplash.com/photo-1588872657578-7efd1f1555ed?auto=format&fit=crop&w=1200&q=80"
+    ],
+    specifications: ["15.6-inch display", "16 GB RAM", "512 GB SSD", "Charger and sleeve included"],
+    provider: { name: "MGNOT Computers", phone: "+251 91 100 4000", location: "Piassa, Addis Ababa" },
+    reservedCount: 0,
+    assignedCount: 0
+  },
+  {
+    id: "lg-double-door-fridge",
+    itemName: "LG Double-Door Refrigerator",
+    shortDescription: "A spacious energy-efficient refrigerator for the family home.",
+    description: "Win a new LG double-door refrigerator with a large fresh-food area, dedicated freezer, adjustable shelves, and an energy-efficient cooling system.",
+    condition: "New",
+    estimatedValue: 120000,
+    ticketPrice: 40,
+    ticketLimit: 600,
+    drawAt: hoursFromNow(48),
+    drawScheduleVersion: DRAW_SCHEDULE_VERSION,
+    status: "open",
+    coverImageUrl: "https://images.unsplash.com/photo-1571175443880-49e1d25b2bc5?auto=format&fit=crop&w=1200&q=80",
+    galleryImageUrls: [
+      "https://images.unsplash.com/photo-1571175443880-49e1d25b2bc5?auto=format&fit=crop&w=1200&q=80",
+      "https://images.unsplash.com/photo-1584568694244-14fbdf83bd30?auto=format&fit=crop&w=1200&q=80"
+    ],
+    specifications: ["Double-door design", "Adjustable glass shelves", "Energy-efficient cooling", "Manufacturer accessories included"],
+    provider: { name: "MGNOT Home", phone: "+251 91 100 5000", location: "Mexico, Addis Ababa" },
+    reservedCount: 0,
+    assignedCount: 0
+  },
+  {
+    id: "sony-home-theater",
+    itemName: "Sony Home Theater System",
+    shortDescription: "A powerful surround-sound package for movies and music.",
+    description: "A complete Sony home theater system with multi-speaker surround sound, Bluetooth connectivity, HDMI support, remote control, and all standard cables.",
+    condition: "New",
+    estimatedValue: 68000,
+    ticketPrice: 20,
+    ticketLimit: 450,
+    drawAt: hoursFromNow(72),
+    drawScheduleVersion: DRAW_SCHEDULE_VERSION,
+    status: "open",
+    coverImageUrl: "https://images.unsplash.com/photo-1558089687-f282ffcbc126?auto=format&fit=crop&w=1200&q=80",
+    galleryImageUrls: [
+      "https://images.unsplash.com/photo-1558089687-f282ffcbc126?auto=format&fit=crop&w=1200&q=80",
+      "https://images.unsplash.com/photo-1545454675-3531b543be5d?auto=format&fit=crop&w=1200&q=80"
+    ],
+    specifications: ["Surround sound", "Bluetooth audio", "HDMI connectivity", "Remote and cables included"],
+    provider: { name: "MGNOT Audio", phone: "+251 91 100 6000", location: "Sar Bet, Addis Ababa" },
+    reservedCount: 0,
+    assignedCount: 0
+  },
+  {
+    id: "playstation-5-completed",
+    itemName: "PlayStation 5",
+    shortDescription: "Completed demo raffle for a PlayStation 5 console.",
+    description: "A completed raffle demonstrating how past winners appear in the application.",
+    condition: "New",
+    estimatedValue: 85000,
+    ticketPrice: 25,
+    ticketLimit: 300,
+    status: "completed",
+    coverImageUrl: "https://images.unsplash.com/photo-1606813907291-d86efa9b94db?auto=format&fit=crop&w=1200&q=80",
+    galleryImageUrls: ["https://images.unsplash.com/photo-1606813907291-d86efa9b94db?auto=format&fit=crop&w=1200&q=80"],
+    specifications: ["Disc edition", "One controller", "Original accessories"],
+    reservedCount: 300,
+    assignedCount: 300,
+    winningNumber: 147,
+    winner: {
+      displayName: "Hana M.",
+      username: "hana_winner",
+      phone: "+251 91 234 5678",
+      photo: null
+    },
+    drawnAt: "2026-07-01T12:00:00.000Z"
+  },
+  {
+    id: "iphone-14-completed",
+    itemName: "iPhone 14",
+    shortDescription: "Completed demo raffle for an iPhone 14.",
+    description: "A completed raffle demonstrating a previous item winner.",
+    condition: "New",
+    estimatedValue: 110000,
+    ticketPrice: 30,
+    ticketLimit: 400,
+    status: "completed",
+    coverImageUrl: "https://images.unsplash.com/photo-1678685888221-cda773a3dcdb?auto=format&fit=crop&w=1200&q=80",
+    galleryImageUrls: ["https://images.unsplash.com/photo-1678685888221-cda773a3dcdb?auto=format&fit=crop&w=1200&q=80"],
+    specifications: ["128 GB", "Original box included"],
+    reservedCount: 400,
+    assignedCount: 400,
+    winningNumber: 86,
+    winner: { displayName: "Abel T.", username: "abel_t", phone: "+251 92 345 6789", photo: null },
+    drawnAt: "2026-06-17T12:00:00.000Z"
+  },
+  {
+    id: "washing-machine-completed",
+    itemName: "LG Washing Machine",
+    shortDescription: "Completed demo raffle for an automatic washing machine.",
+    description: "A completed raffle demonstrating a previous item winner.",
+    condition: "New",
+    estimatedValue: 72000,
+    ticketPrice: 20,
+    ticketLimit: 500,
+    status: "completed",
+    coverImageUrl: "https://images.unsplash.com/photo-1626806787461-102c1bfaaea1?auto=format&fit=crop&w=1200&q=80",
+    galleryImageUrls: ["https://images.unsplash.com/photo-1626806787461-102c1bfaaea1?auto=format&fit=crop&w=1200&q=80"],
+    specifications: ["Front loading", "Automatic wash cycles"],
+    reservedCount: 500,
+    assignedCount: 500,
+    winningNumber: 309,
+    winner: { displayName: "Marta K.", username: "marta_k", phone: "+251 93 456 7890", photo: null },
+    drawnAt: "2026-06-03T12:00:00.000Z"
+  },
+  {
+    id: "motorbike-completed",
+    itemName: "TVS HLX 150 Motorbike",
+    shortDescription: "Completed demo raffle for a commuter motorbike.",
+    description: "A completed raffle demonstrating a previous item winner.",
+    condition: "New",
+    estimatedValue: 185000,
+    ticketPrice: 50,
+    ticketLimit: 700,
+    status: "completed",
+    coverImageUrl: "https://images.unsplash.com/photo-1558981806-ec527fa84c39?auto=format&fit=crop&w=1200&q=80",
+    galleryImageUrls: ["https://images.unsplash.com/photo-1558981806-ec527fa84c39?auto=format&fit=crop&w=1200&q=80"],
+    specifications: ["150cc engine", "Road-ready accessories"],
+    reservedCount: 700,
+    assignedCount: 700,
+    winningNumber: 521,
+    winner: { displayName: "Dawit B.", username: "dawit_b", phone: "+251 94 567 8901", photo: null },
+    drawnAt: "2026-05-20T12:00:00.000Z"
+  }
+];
+
+module.exports = { DEFAULT_RAFFLES };
