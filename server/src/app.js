@@ -17,6 +17,7 @@ const {
 } = require("./config/redis");
 const { removeSocketPresence, setSocketPresence } = require("./realtime/presence");
 const { uploadsRoot } = require("./config/uploads");
+const { createBot, startBot } = require("./bot/bot");
 
 const userRoutes = require("./routes/user/user");
 const { router: raffleRoutes } = require("./api/raffles");
@@ -26,6 +27,8 @@ const screenshotRecRoutes = require("./api/screenshotrec");
 const app = express();
 const PORT = process.env.PORT || 8000;
 let socketAdapterClients = [];
+let bot;
+let botLaunchPromise;
 
 const allowedOrigins = [
   process.env.CORS_ORIGIN,
@@ -95,6 +98,12 @@ async function startApp() {
     await connectRedis();
     await db.init();
 
+    bot = createBot(db);
+    ({ launchPromise: botLaunchPromise } = await startBot(bot));
+    botLaunchPromise.catch((error) => {
+      console.error("Telegram bot stopped unexpectedly:", error);
+    });
+
     server = http.createServer(app);
     io = new Server(server, {
       cors: {
@@ -144,6 +153,13 @@ async function startApp() {
 
     const shutdown = async (signal) => {
       console.log(`Received ${signal}; closing backend API.`);
+      if (bot) {
+        try {
+          bot.stop(signal);
+        } catch (error) {
+          console.warn("Telegram bot was already stopped:", error.message);
+        }
+      }
       if (io) io.close();
       if (server) {
         await new Promise((resolve) => server.close(resolve));

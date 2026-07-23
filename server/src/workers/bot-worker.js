@@ -20,8 +20,8 @@ async function startWorker() {
     process.once("SIGINT", () => shutdown("SIGINT").catch(console.error));
     process.once("SIGTERM", () => shutdown("SIGTERM").catch(console.error));
 
-    await startBot(bot);
-    console.log("Telegram bot worker started.");
+    const { launchPromise } = await startBot(bot);
+    await launchPromise;
   } catch (error) {
     console.error("Telegram bot worker startup error:", error);
     process.exit(1);
