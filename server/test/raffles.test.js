@@ -1,8 +1,9 @@
 const assert = require("node:assert/strict");
 const crypto = require("node:crypto");
 const test = require("node:test");
-const { publicRaffle, verifyTelegramInitData } = require("../src/api/raffles");
+const { isRecentWinner, publicRaffle, verifyTelegramInitData } = require("../src/api/raffles");
 const { _internals: postgresInternals } = require("../src/config/postgres");
+const { createInitialWinnerRaffles } = require("../src/data/raffles");
 
 test("publicRaffle calculates paid capacity without exposing private purchases", () => {
   const result = publicRaffle({
@@ -19,6 +20,35 @@ test("publicRaffle calculates paid capacity without exposing private purchases",
   assert.equal(result.availableCount, 86);
   assert.equal(result.drawAt, "2026-07-24T12:00:00.000Z");
   assert.equal(result.secret, undefined);
+});
+
+test("first-run winner history contains five varied synthetic Ethiopian winners", () => {
+  const now = Date.parse("2026-07-25T12:00:00.000Z");
+  const winners = createInitialWinnerRaffles(now);
+  assert.equal(winners.length, 5);
+  assert.deepEqual(winners.map((raffle) => raffle.itemName), [
+    "Samsung Galaxy A15 Phone",
+    "iPhone 11 Pro Max",
+    "Clothes Ironing Machine",
+    "Wireless Headset",
+    "Nike Shoes – Size 42",
+  ]);
+  assert.equal(new Set(winners.map((raffle) => raffle.winner.username)).size, 5);
+  winners.forEach((raffle) => {
+    assert.match(raffle.winner.phone, /^\+251 9[1-5] \d{3} \d{4}$/);
+    assert.equal(isRecentWinner(raffle, now), true);
+  });
+});
+
+test("completed winners leave the recent feed 30 days after their draw", () => {
+  const now = Date.parse("2026-07-25T12:00:00.000Z");
+  const winner = {
+    status: "completed",
+    winningNumber: 42,
+    winner: { displayName: "Synthetic Winner" },
+  };
+  assert.equal(isRecentWinner({ ...winner, drawnAt: new Date(now - (29 * 24 * 60 * 60 * 1000)).toISOString() }, now), true);
+  assert.equal(isRecentWinner({ ...winner, drawnAt: new Date(now - (30 * 24 * 60 * 60 * 1000)).toISOString() }, now), false);
 });
 
 test("Telegram init data accepts a fresh valid signature and rejects tampering", () => {

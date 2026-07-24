@@ -6,6 +6,7 @@ const {
   registerTelegramUser,
   webAppUrl,
 } = require("../src/bot/bot");
+const { maskPhone } = require("../src/services/telegramMessaging");
 
 function memoryDb(initialUser) {
   let stored = initialUser ? { ...initialUser } : null;
@@ -161,4 +162,10 @@ test("frontend URL falls back to FRONTEND_URL and rejects non-HTTP links", () =>
     if (previousFrontendUrl === undefined) delete process.env.FRONTEND_URL;
     else process.env.FRONTEND_URL = previousFrontendUrl;
   }
+});
+
+test("winner notifications obscure the final two phone digits", () => {
+  assert.equal(maskPhone("+251 91 234 5678"), "+251 91 234 56••");
+  assert.equal(maskPhone("12"), "••");
+  assert.equal(maskPhone(""), "Not provided");
 });

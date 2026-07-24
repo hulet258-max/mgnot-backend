@@ -20,7 +20,7 @@ const { uploadsRoot } = require("./config/uploads");
 const { createBot, startBot } = require("./bot/bot");
 
 const userRoutes = require("./routes/user/user");
-const { router: raffleRoutes } = require("./api/raffles");
+const { ensureInitialWinnersSeeded, finalizeDueRaffles, router: raffleRoutes } = require("./api/raffles");
 const adminRaffleRoutes = require("./api/adminRaffles");
 const screenshotRecRoutes = require("./api/screenshotrec");
 
@@ -29,6 +29,7 @@ const PORT = process.env.PORT || 8000;
 let socketAdapterClients = [];
 let bot;
 let botLaunchPromise;
+let drawLifecycleTimer;
 
 const localAdminOrigins = [
   "http://localhost:3006",
@@ -105,6 +106,7 @@ async function startApp() {
   try {
     await connectRedis();
     await db.init();
+    await ensureInitialWinnersSeeded();
 
     bot = createBot(db);
     ({ launchPromise: botLaunchPromise } = await startBot(bot));
@@ -158,9 +160,16 @@ async function startApp() {
     server.listen(PORT, () => {
       console.log(`Backend API + Socket.IO listening on port ${PORT}`);
     });
+    const runDrawLifecycle = () => finalizeDueRaffles({ app }).catch((error) => {
+      console.error("Draw lifecycle scheduler error:", error);
+    });
+    drawLifecycleTimer = setInterval(runDrawLifecycle, 10000);
+    drawLifecycleTimer.unref?.();
+    runDrawLifecycle();
 
     const shutdown = async (signal) => {
       console.log(`Received ${signal}; closing backend API.`);
+      if (drawLifecycleTimer) clearInterval(drawLifecycleTimer);
       if (bot) {
         try {
           bot.stop(signal);

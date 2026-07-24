@@ -1,4 +1,5 @@
 const hoursFromNow = (hours) => new Date(Date.now() + (hours * 60 * 60 * 1000)).toISOString();
+const daysAgo = (days, now = Date.now()) => new Date(now - (days * 24 * 60 * 60 * 1000)).toISOString();
 const DRAW_SCHEDULE_VERSION = 2;
 
 const DEFAULT_RAFFLES = [
@@ -195,4 +196,114 @@ const DEFAULT_RAFFLES = [
   }
 ];
 
-module.exports = { DEFAULT_RAFFLES };
+function createInitialWinnerRaffles(now = Date.now()) {
+  return [
+    {
+      id: "seed-winner-samsung-a15",
+      itemName: "Samsung Galaxy A15 Phone",
+      shortDescription: "A completed item raffle for a Samsung Galaxy A15 smartphone.",
+      description: "Generated first-run winner history for the Samsung Galaxy A15 phone.",
+      condition: "New",
+      estimatedValue: 24500,
+      ticketPrice: 20,
+      ticketLimit: 300,
+      status: "completed",
+      coverImageUrl: "https://images.unsplash.com/photo-1598327105666-5b89351aff97?auto=format&fit=crop&w=1200&q=80",
+      galleryImageUrls: ["https://images.unsplash.com/photo-1598327105666-5b89351aff97?auto=format&fit=crop&w=1200&q=80"],
+      specifications: ["128 GB storage", "Dual SIM", "Original box included"],
+      reservedCount: 300,
+      assignedCount: 300,
+      winningNumber: 184,
+      winner: { displayName: "Nahom K.", username: "nahom.k23", phone: "+251 91 742 3186", photo: null },
+      drawnAt: daysAgo(3, now),
+      drawAt: daysAgo(3, now),
+      generatedSeed: true
+    },
+    {
+      id: "seed-winner-iphone-11-pro-max",
+      itemName: "iPhone 11 Pro Max",
+      shortDescription: "A completed item raffle for an iPhone 11 Pro Max.",
+      description: "Generated first-run winner history for the iPhone 11 Pro Max.",
+      condition: "Excellent",
+      estimatedValue: 52000,
+      ticketPrice: 30,
+      ticketLimit: 400,
+      status: "completed",
+      coverImageUrl: "https://images.unsplash.com/photo-1574755393849-623942496936?auto=format&fit=crop&w=1200&q=80",
+      galleryImageUrls: ["https://images.unsplash.com/photo-1574755393849-623942496936?auto=format&fit=crop&w=1200&q=80"],
+      specifications: ["256 GB storage", "Original charger included", "Excellent condition"],
+      reservedCount: 400,
+      assignedCount: 400,
+      winningNumber: 271,
+      winner: { displayName: "Selamawit T.", username: "selamawit_92", phone: "+251 92 618 4507", photo: null },
+      drawnAt: daysAgo(7, now),
+      drawAt: daysAgo(7, now),
+      generatedSeed: true
+    },
+    {
+      id: "seed-winner-clothes-iron",
+      itemName: "Clothes Ironing Machine",
+      shortDescription: "A completed item raffle for a steam clothes iron.",
+      description: "Generated first-run winner history for a clothes ironing machine.",
+      condition: "New",
+      estimatedValue: 7800,
+      ticketPrice: 10,
+      ticketLimit: 200,
+      status: "completed",
+      coverImageUrl: "https://images.unsplash.com/photo-1582735689369-4fe89db7114c?auto=format&fit=crop&w=1200&q=80",
+      galleryImageUrls: ["https://images.unsplash.com/photo-1582735689369-4fe89db7114c?auto=format&fit=crop&w=1200&q=80"],
+      specifications: ["Steam ironing", "Adjustable temperature", "Manufacturer warranty"],
+      reservedCount: 200,
+      assignedCount: 200,
+      winningNumber: 63,
+      winner: { displayName: "Bereket A.", username: "BekiWins", phone: "+251 93 527 8641", photo: null },
+      drawnAt: daysAgo(11, now),
+      drawAt: daysAgo(11, now),
+      generatedSeed: true
+    },
+    {
+      id: "seed-winner-wireless-headset",
+      itemName: "Wireless Headset",
+      shortDescription: "A completed item raffle for a wireless over-ear headset.",
+      description: "Generated first-run winner history for a wireless headset.",
+      condition: "New",
+      estimatedValue: 9600,
+      ticketPrice: 10,
+      ticketLimit: 250,
+      status: "completed",
+      coverImageUrl: "https://images.unsplash.com/photo-1505740420928-5e560c06d30e?auto=format&fit=crop&w=1200&q=80",
+      galleryImageUrls: ["https://images.unsplash.com/photo-1505740420928-5e560c06d30e?auto=format&fit=crop&w=1200&q=80"],
+      specifications: ["Bluetooth connectivity", "Built-in microphone", "Rechargeable battery"],
+      reservedCount: 250,
+      assignedCount: 250,
+      winningNumber: 119,
+      winner: { displayName: "Mimi D.", username: "mimi_addis", phone: "+251 94 386 2059", photo: null },
+      drawnAt: daysAgo(16, now),
+      drawAt: daysAgo(16, now),
+      generatedSeed: true
+    },
+    {
+      id: "seed-winner-nike-shoes-42",
+      itemName: "Nike Shoes – Size 42",
+      shortDescription: "A completed item raffle for a pair of Nike shoes in size 42.",
+      description: "Generated first-run winner history for brand-new Nike shoes, size 42.",
+      condition: "New",
+      estimatedValue: 12500,
+      ticketPrice: 10,
+      ticketLimit: 220,
+      status: "completed",
+      coverImageUrl: "https://images.unsplash.com/photo-1542291026-7eec264c27ff?auto=format&fit=crop&w=1200&q=80",
+      galleryImageUrls: ["https://images.unsplash.com/photo-1542291026-7eec264c27ff?auto=format&fit=crop&w=1200&q=80"],
+      specifications: ["Size 42", "Brand new", "Original packaging"],
+      reservedCount: 220,
+      assignedCount: 220,
+      winningNumber: 42,
+      winner: { displayName: "Dawit G.", username: "dave_251", phone: "+251 95 471 6932", photo: null },
+      drawnAt: daysAgo(22, now),
+      drawAt: daysAgo(22, now),
+      generatedSeed: true
+    }
+  ];
+}
+
+module.exports = { DEFAULT_RAFFLES, createInitialWinnerRaffles };

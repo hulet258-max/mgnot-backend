@@ -5,6 +5,7 @@ const express = require("express");
 const multer = require("multer");
 const db = require("../config/postgres");
 const { raffleUploadsDir } = require("../config/uploads");
+const { queueAdminBroadcast } = require("../services/telegramMessaging");
 const {
   ensureRafflesSeeded,
   finalizeDueRaffles,
@@ -17,7 +18,6 @@ const {
 
 const router = express.Router();
 const SESSION_SECONDS = 8 * 60 * 60;
-const DRAW_MIX_DURATION_MS = 10 * 60 * 1000;
 const VALID_STATUSES = new Set(["draft", "open", "paused", "sold_out", "completed", "archived"]);
 const ALLOWED_IMAGE_TYPES = new Set(["image/jpeg", "image/png", "image/webp", "image/gif"]);
 
@@ -341,15 +341,59 @@ router.patch("/raffle-control/raffles/:raffleId", async (req, res) => {
   }
 });
 
+router.delete("/raffle-control/raffles/:raffleId", async (req, res) => {
+  try {
+    const id = String(req.params.raffleId);
+    const raffleRef = db.collection("raffles").doc(id);
+    const raffleDoc = await raffleRef.get();
+    if (!raffleDoc.exists) {
+      return res.status(404).json({ success: false, error: "Raffle not found." });
+    }
+
+    const raffle = { id, ...raffleDoc.data() };
+    const [operations, transactionSnapshot] = await Promise.all([
+      raffleOperations(publicRaffle(raffle)),
+      db.collection("transactions").where("raffleId", "==", id).get()
+    ]);
+
+    await db.runTransaction(async (tx) => {
+      await tx.delete(raffleRef);
+      for (const transactionDoc of transactionSnapshot.docs) {
+        await tx.delete(transactionDoc.ref);
+      }
+    });
+
+    await invalidateRaffle(id);
+    await audit(req, "raffle.deleted", id, {
+      itemName: raffle.itemName,
+      status: raffle.status,
+      purchasesDeleted: operations.purchases.length,
+      ticketsDeleted: operations.tickets.length,
+      transactionsDeleted: transactionSnapshot.size
+    });
+    req.app.get("io")?.emit("raffle_updated", {
+      raffleId: id,
+      reason: "raffle_deleted",
+      deleted: true,
+      at: new Date().toISOString()
+    });
+
+    return res.json({ success: true, deletedId: id });
+  } catch (error) {
+    console.error("DELETE /api/admin/raffle-control/raffles/:raffleId:", error);
+    return res.status(500).json({ success: false, error: "Could not delete raffle item." });
+  }
+});
+
 router.post("/raffle-control/raffles/:raffleId/run-draw", async (req, res) => {
   try {
     const id = String(req.params.raffleId);
     const before = await getRaffle(id);
     if (!before) return res.status(404).json({ success: false, error: "Raffle not found." });
     if (before.status === "completed") return res.status(409).json({ success: false, error: "This raffle was already drawn." });
-    const eligibleAt = new Date(before.drawAt || 0).getTime() + DRAW_MIX_DURATION_MS;
+    const eligibleAt = new Date(before.drawAt || 0).getTime();
     if (!before.drawAt || Date.now() < eligibleAt) {
-      return res.status(409).json({ success: false, error: "The secure draw becomes available ten minutes after the scheduled draw time." });
+      return res.status(409).json({ success: false, error: "The secure draw becomes available at the scheduled draw time." });
     }
     if (!before.assignedCount) return res.status(409).json({ success: false, error: "There are no assigned ticket numbers to draw." });
     await finalizeDueRaffles(req);
@@ -360,6 +404,109 @@ router.post("/raffle-control/raffles/:raffleId/run-draw", async (req, res) => {
     return res.json({ success: true, raffle });
   } catch (error) {
     return res.status(error.status || 500).json({ success: false, error: error.message || "Could not run draw." });
+  }
+});
+
+router.get("/messaging/audience", async (_req, res) => {
+  try {
+    const [usersSnapshot, raffles] = await Promise.all([
+      db.collection("users").get(),
+      getRaffles()
+    ]);
+    const purchasesByUser = new Map();
+
+    for (const raffle of raffles) {
+      const purchases = await db.collection("raffles").doc(raffle.id).collection("purchases").get();
+      purchases.docs.forEach((purchaseDoc) => {
+        const userId = String((purchaseDoc.data() || {}).userId || "");
+        if (!userId) return;
+        if (!purchasesByUser.has(userId)) purchasesByUser.set(userId, new Set());
+        purchasesByUser.get(userId).add(raffle.id);
+      });
+    }
+
+    const users = usersSnapshot.docs.map((doc) => {
+      const user = doc.data() || {};
+      return {
+        telegramId: String(user.telegramId || doc.id),
+        firstName: user.firstName || "",
+        lastName: user.lastName || "",
+        username: user.username || "",
+        phone: user.phone || "",
+        joinedAt: user.createdAt || null,
+        purchasedRaffleIds: [...(purchasesByUser.get(String(user.telegramId || doc.id)) || [])]
+      };
+    });
+    return res.json({
+      success: true,
+      users,
+      raffles: raffles.map((raffle) => ({
+        id: raffle.id,
+        itemName: raffle.itemName,
+        status: raffle.status,
+        coverImageUrl: raffle.coverImageUrl
+      }))
+    });
+  } catch (error) {
+    console.error("GET /api/admin/messaging/audience:", error);
+    return res.status(500).json({ success: false, error: "Could not load messaging audience." });
+  }
+});
+
+router.post("/messaging/send", async (req, res) => {
+  try {
+    const message = cleanText(req.body?.message, 900);
+    const audience = cleanText(req.body?.audience, 30) || "all";
+    const raffleId = cleanText(req.body?.raffleId, 160);
+    const buttonLabel = cleanText(req.body?.buttonLabel, 40);
+    if (!message) return res.status(400).json({ success: false, error: "Message text is required." });
+    if (!["all", "bought", "not_bought"].includes(audience)) {
+      return res.status(400).json({ success: false, error: "Audience filter is invalid." });
+    }
+    if (audience !== "all" && !raffleId) {
+      return res.status(400).json({ success: false, error: "Choose an item for this audience filter." });
+    }
+
+    const usersSnapshot = await db.collection("users").get();
+    const purchasedUserIds = new Set();
+    let raffle = null;
+    if (raffleId) {
+      raffle = await getRaffle(raffleId);
+      if (!raffle) return res.status(404).json({ success: false, error: "Selected raffle item was not found." });
+      const purchases = await db.collection("raffles").doc(raffleId).collection("purchases").get();
+      purchases.docs.forEach((doc) => purchasedUserIds.add(String((doc.data() || {}).userId || "")));
+    }
+
+    const recipients = usersSnapshot.docs
+      .map((doc) => String((doc.data() || {}).telegramId || doc.id))
+      .filter((userId) =>
+        audience === "all" ||
+        (audience === "bought" && purchasedUserIds.has(userId)) ||
+        (audience === "not_bought" && !purchasedUserIds.has(userId))
+      );
+    const jobRef = await db.collection("broadcast_jobs").add({
+      audience,
+      raffleId: raffleId || null,
+      message,
+      recipientCount: recipients.length,
+      status: "queued",
+      actor: req.admin?.sub || "admin",
+      createdAt: new Date().toISOString()
+    });
+
+    queueAdminBroadcast({ recipients, message, raffle, buttonLabel })
+      .then((result) => jobRef.set({ status: "completed", ...result, completedAt: new Date().toISOString() }, { merge: true }))
+      .catch((error) => jobRef.set({ status: "failed", error: error.message, completedAt: new Date().toISOString() }, { merge: true }));
+
+    await audit(req, "message.queued", jobRef.id, {
+      audience,
+      raffleId: raffleId || null,
+      recipients: recipients.length
+    });
+    return res.status(202).json({ success: true, jobId: jobRef.id, recipients: recipients.length });
+  } catch (error) {
+    console.error("POST /api/admin/messaging/send:", error);
+    return res.status(500).json({ success: false, error: "Could not queue Telegram message." });
   }
 });
 

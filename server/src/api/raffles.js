@@ -3,11 +3,17 @@ const express = require("express");
 const db = require("../config/postgres");
 const { redis } = require("../config/redis");
 const { verifyPayment } = require("./receiptService");
-const { DEFAULT_RAFFLES } = require("../data/raffles");
+const { DEFAULT_RAFFLES, createInitialWinnerRaffles } = require("../data/raffles");
+const {
+  queueDrawReminderNotification,
+  queueDrawResultNotification
+} = require("../services/telegramMessaging");
 
 const router = express.Router();
 const RAFFLES_CACHE_KEY = "raffles:list";
-const DRAW_MIX_DURATION_MS = 10 * 60 * 1000;
+const DRAW_REMINDER_MS = 10 * 60 * 1000;
+const WINNER_RETENTION_MS = 30 * 24 * 60 * 60 * 1000;
+const INITIAL_WINNERS_SEED_ID = "initial-raffle-winners-v1";
 const SHOULD_SEED_DEFAULT_RAFFLES = process.env.SEED_DEFAULT_RAFFLES === "true";
 const raffleCacheKey = (raffleId) => `raffle:${raffleId}`;
 
@@ -78,6 +84,40 @@ async function ensureRafflesSeeded() {
   }
 }
 
+async function ensureInitialWinnersSeeded() {
+  const markerRef = db.collection("system").doc(INITIAL_WINNERS_SEED_ID);
+  const marker = await markerRef.get();
+  if (marker.exists) return false;
+
+  const winners = createInitialWinnerRaffles();
+  const refs = winners.map((raffle) => db.collection("raffles").doc(raffle.id));
+  const existing = await Promise.all(refs.map((ref) => ref.get()));
+  const batch = db.batch();
+
+  existing.forEach((doc, index) => {
+    if (doc.exists) return;
+    batch.set(refs[index], {
+      ...winners[index],
+      createdAt: db.FieldValue.serverTimestamp(),
+      updatedAt: db.FieldValue.serverTimestamp()
+    });
+  });
+  batch.set(markerRef, {
+    version: 1,
+    winnerIds: winners.map((raffle) => raffle.id),
+    seededAt: db.FieldValue.serverTimestamp()
+  });
+  await batch.commit();
+  if (redis.isOpen) await redis.del(RAFFLES_CACHE_KEY);
+  return true;
+}
+
+function isRecentWinner(raffle, now = Date.now()) {
+  if (raffle?.status !== "completed" || !raffle.winningNumber || !raffle.winner) return false;
+  const drawnAt = new Date(raffle.drawnAt || 0).getTime();
+  return Number.isFinite(drawnAt) && drawnAt > 0 && now - drawnAt < WINNER_RETENTION_MS;
+}
+
 async function getRaffles() {
   if (redis.isOpen) {
     const cached = await redis.get(RAFFLES_CACHE_KEY);
@@ -107,10 +147,35 @@ async function invalidateRaffle(raffleId) {
 
 async function finalizeDueRaffles(req) {
   const snapshot = await db.collection("raffles").get();
+  const now = Date.now();
+  const reminders = snapshot.docs.filter((doc) => {
+    const raffle = doc.data() || {};
+    const drawTime = new Date(raffle.drawAt || 0).getTime();
+    return ["open", "sold_out"].includes(raffle.status) &&
+      drawTime > now &&
+      drawTime - now <= DRAW_REMINDER_MS &&
+      !raffle.drawReminder?.queuedAt;
+  });
+
+  for (const raffleDoc of reminders) {
+    const raffleRef = db.collection("raffles").doc(raffleDoc.id);
+    let claimed = false;
+    await db.runTransaction(async (tx) => {
+      const lockedRaffle = await tx.get(raffleRef);
+      if (!lockedRaffle.exists || (lockedRaffle.data() || {}).drawReminder?.queuedAt) return;
+      await tx.update(raffleRef, { drawReminder: { queuedAt: new Date().toISOString() } });
+      claimed = true;
+    });
+    if (!claimed) continue;
+    queueDrawReminderNotification(raffleDoc.id).catch((error) => {
+      console.error(`Draw reminder failed for raffle ${raffleDoc.id}:`, error);
+    });
+  }
+
   const due = snapshot.docs.filter((doc) => {
     const raffle = doc.data() || {};
     const drawTime = new Date(raffle.drawAt || 0).getTime();
-    return ["open", "sold_out"].includes(raffle.status) && drawTime > 0 && Date.now() >= drawTime + DRAW_MIX_DURATION_MS;
+    return ["open", "sold_out"].includes(raffle.status) && drawTime > 0 && now >= drawTime;
   });
 
   for (const raffleDoc of due) {
@@ -128,7 +193,7 @@ async function finalizeDueRaffles(req) {
       if (!lockedRaffle.exists || !purchaseDoc.exists) return;
       const raffle = lockedRaffle.data() || {};
       const drawTime = new Date(raffle.drawAt || 0).getTime();
-      if (raffle.status === "completed" || Date.now() < drawTime + DRAW_MIX_DURATION_MS) return;
+      if (raffle.status === "completed" || Date.now() < drawTime) return;
       const purchase = purchaseDoc.data() || {};
       tx.update(raffleRef, {
         status: "completed",
@@ -149,6 +214,9 @@ async function finalizeDueRaffles(req) {
     if (completed) {
       await invalidateRaffle(raffleId);
       await broadcast(req, raffleId, "draw_completed");
+      queueDrawResultNotification(raffleId).catch((error) => {
+        console.error(`Draw notification failed for raffle ${raffleId}:`, error);
+      });
     }
   }
 }
@@ -286,17 +354,50 @@ router.get("/raffles/:raffleId/numbers", async (req, res) => {
 router.get("/users/me/raffle-tickets", async (req, res) => {
   try {
     const userId = authenticatedUserId(req);
+    const retentionMs = 24 * 60 * 60 * 1000;
     await ensureRafflesSeeded();
     const raffles = await getRaffles();
     const purchases = [];
     for (const raffle of raffles) {
       const snapshot = await db.collection("raffles").doc(raffle.id).collection("purchases").where("userId", "==", userId).get();
-      snapshot.docs.forEach((doc) => purchases.push({ id: doc.id, raffle, ...doc.data() }));
+      snapshot.docs.forEach((doc) => {
+        const purchase = doc.data() || {};
+        const viewedAt = new Date(purchase.resultViewedAt || 0).getTime();
+        if (raffle.status === "completed" && viewedAt > 0 && Date.now() - viewedAt >= retentionMs) return;
+        const resultStatus = raffle.status === "completed"
+          ? Number(purchase.ticketNumber) === Number(raffle.winningNumber) ? "winner" : "not_winner"
+          : null;
+        purchases.push({ id: doc.id, raffle, ...purchase, resultStatus });
+      });
     }
     purchases.sort((a, b) => String(b.createdAt || "").localeCompare(String(a.createdAt || "")));
     return res.json({ success: true, purchases });
   } catch (error) {
     return res.status(error.status || 500).json({ success: false, error: error.message || "Failed to load tickets." });
+  }
+});
+
+router.post("/raffles/:raffleId/result-viewed", async (req, res) => {
+  try {
+    const userId = authenticatedUserId(req);
+    const raffle = await getRaffle(req.params.raffleId);
+    if (!raffle) return res.status(404).json({ success: false, error: "Raffle not found." });
+    if (raffle.status !== "completed") {
+      return res.status(409).json({ success: false, error: "The draw result is not available yet." });
+    }
+    const purchases = await db.collection("raffles").doc(raffle.id).collection("purchases").where("userId", "==", userId).get();
+    const batch = db.batch();
+    let changed = 0;
+    purchases.docs.forEach((doc) => {
+      if (!(doc.data() || {}).resultViewedAt) {
+        batch.update(doc.ref, { resultViewedAt: db.FieldValue.serverTimestamp() });
+        changed += 1;
+      }
+    });
+    if (changed) await batch.commit();
+    return res.json({ success: true, viewedAt: new Date().toISOString(), updated: changed });
+  } catch (error) {
+    return res.status(error.status || 500).json({ success: false, error: error.message || "Could not record result view." });
   }
 });
 
@@ -428,9 +529,12 @@ router.post("/raffles/:raffleId/purchases/:purchaseId/number", async (req, res) 
 router.get("/raffle-winners", async (req, res) => {
   try {
     await ensureRafflesSeeded();
+    await ensureInitialWinnersSeeded();
     await finalizeDueRaffles(req);
     const raffles = await getRaffles();
-    const winners = raffles.filter((raffle) => raffle.status === "completed" && raffle.winningNumber).sort((a, b) => String(b.drawnAt).localeCompare(String(a.drawnAt)));
+    const winners = raffles
+      .filter((raffle) => isRecentWinner(raffle))
+      .sort((a, b) => String(b.drawnAt).localeCompare(String(a.drawnAt)));
     return res.json({ success: true, winners });
   } catch (error) {
     return res.status(500).json({ success: false, error: "Failed to load past winners." });
@@ -440,11 +544,13 @@ router.get("/raffle-winners", async (req, res) => {
 module.exports = {
   router,
   ensureRafflesSeeded,
+  ensureInitialWinnersSeeded,
   finalizeDueRaffles,
   getRaffle,
   getRaffles,
   invalidateRaffle,
   publicRaffle,
   broadcast,
-  verifyTelegramInitData
+  verifyTelegramInitData,
+  isRecentWinner
 };

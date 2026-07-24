@@ -320,6 +320,14 @@ class DocumentReference {
     }
     await this.set(materializeData(data, snap.data()), {}, client);
   }
+
+  async delete(client) {
+    const executor = client || pool;
+    await executor.query(
+      "DELETE FROM app_documents WHERE path = $1 OR path LIKE $1 || '/%'",
+      [this.path]
+    );
+  }
 }
 
 class Query {
@@ -395,6 +403,10 @@ class WriteBatch {
     this.operations.push({ type: "update", ref, data });
   }
 
+  delete(ref) {
+    this.operations.push({ type: "delete", ref });
+  }
+
   async commit() {
     return this.db.runTransaction(async (tx) => {
       for (const operation of this.operations) {
@@ -402,6 +414,8 @@ class WriteBatch {
           await tx.set(operation.ref, operation.data, operation.options);
         } else if (operation.type === "update") {
           await tx.update(operation.ref, operation.data);
+        } else if (operation.type === "delete") {
+          await tx.delete(operation.ref);
         }
       }
     });
@@ -428,6 +442,7 @@ const db = {
         get: (ref) => ref.get(client, true),
         set: (ref, data, options) => ref.set(data, options, client),
         update: (ref, data) => ref.update(data, client),
+        delete: (ref) => ref.delete(client),
       };
       const result = await callback(tx);
       await client.query("COMMIT");
