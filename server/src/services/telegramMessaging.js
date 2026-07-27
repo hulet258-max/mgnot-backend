@@ -3,6 +3,7 @@ const path = require("path");
 const { Input, Telegram } = require("telegraf");
 const db = require("../config/postgres");
 const { raffleUploadsDir } = require("../config/uploads");
+const { telegramCompanionPath } = require("./imageOptimizer");
 
 const SEND_INTERVAL_MS = 50; // 20/second, safely below Telegram's ~30/second free limit.
 let broadcastQueue = Promise.resolve();
@@ -28,6 +29,8 @@ function itemPhoto(raffle) {
   const image = String(raffle?.coverImageUrl || "");
   if (/^https:\/\//i.test(image)) return image;
   if (image.startsWith("/uploads/raffles/")) {
+    const companion = telegramCompanionPath(image, raffleUploadsDir);
+    if (companion && fs.existsSync(companion)) return Input.fromLocalFile(companion);
     const localPath = path.join(raffleUploadsDir, path.basename(image));
     if (fs.existsSync(localPath)) return Input.fromLocalFile(localPath);
   }

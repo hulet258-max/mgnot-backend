@@ -4,7 +4,8 @@ const fs = require("fs");
 const express = require("express");
 const multer = require("multer");
 const db = require("../config/postgres");
-const { raffleUploadsDir } = require("../config/uploads");
+const { raffleUploadsDir, uploadTempDir } = require("../config/uploads");
+const { optimizeRaffleImage, removeFiles } = require("../services/imageOptimizer");
 const { queueAdminBroadcast } = require("../services/telegramMessaging");
 const {
   ensureRafflesSeeded,
@@ -22,18 +23,11 @@ const VALID_STATUSES = new Set(["draft", "open", "paused", "sold_out", "complete
 const ALLOWED_IMAGE_TYPES = new Set(["image/jpeg", "image/png", "image/webp", "image/gif"]);
 
 fs.mkdirSync(raffleUploadsDir, { recursive: true });
+fs.mkdirSync(uploadTempDir, { recursive: true });
 
 const mediaStorage = multer.diskStorage({
-  destination: (_req, _file, cb) => cb(null, raffleUploadsDir),
-  filename: (_req, file, cb) => {
-    const ext = path.extname(file.originalname || "").toLowerCase() || (
-      file.mimetype === "image/png" ? ".png"
-        : file.mimetype === "image/webp" ? ".webp"
-          : file.mimetype === "image/gif" ? ".gif"
-            : ".jpg"
-    );
-    cb(null, `${Date.now()}-${crypto.randomBytes(6).toString("hex")}${ext}`);
-  }
+  destination: (_req, _file, cb) => cb(null, uploadTempDir),
+  filename: (_req, _file, cb) => cb(null, `${Date.now()}-${crypto.randomBytes(8).toString("hex")}.upload`)
 });
 
 const mediaUpload = multer({
@@ -46,10 +40,6 @@ const mediaUpload = multer({
     return cb(null, true);
   }
 });
-
-function publicMediaPath(filename) {
-  return `/uploads/raffles/${filename}`;
-}
 
 function secret() {
   return process.env.ADMIN_SESSION_SECRET || process.env.BOT_TOKEN || "local-admin-session-change-me";
@@ -220,14 +210,25 @@ router.post(
     });
   },
   async (req, res) => {
+    const generatedFiles = [];
     try {
       const coverFile = req.files?.cover?.[0] || null;
       const galleryFiles = req.files?.gallery || [];
       if (!coverFile && !galleryFiles.length) {
         return res.status(400).json({ success: false, error: "Choose at least one image from your device." });
       }
-      const coverImageUrl = coverFile ? publicMediaPath(coverFile.filename) : null;
-      const galleryImageUrls = galleryFiles.map((file) => publicMediaPath(file.filename));
+      let coverImageUrl = null;
+      const galleryImageUrls = [];
+      if (coverFile) {
+        const optimized = await optimizeRaffleImage(coverFile.path, raffleUploadsDir);
+        generatedFiles.push(...optimized.files);
+        coverImageUrl = optimized.url;
+      }
+      for (const file of galleryFiles) {
+        const optimized = await optimizeRaffleImage(file.path, raffleUploadsDir);
+        generatedFiles.push(...optimized.files);
+        galleryImageUrls.push(optimized.url);
+      }
       await audit(req, "media.uploaded", "raffle-media", {
         cover: Boolean(coverImageUrl),
         galleryCount: galleryImageUrls.length
@@ -239,7 +240,13 @@ router.post(
       });
     } catch (error) {
       console.error("POST /api/admin/raffle-control/media:", error);
-      return res.status(500).json({ success: false, error: "Could not upload images." });
+      await removeFiles(generatedFiles);
+      const pendingFiles = Object.values(req.files || {}).flat().map((file) => file.path).filter(Boolean);
+      await removeFiles(pendingFiles);
+      return res.status(error.status || 500).json({
+        success: false,
+        error: error.status ? error.message : "Could not upload images."
+      });
     }
   }
 );

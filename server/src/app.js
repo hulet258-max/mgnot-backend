@@ -58,7 +58,7 @@ app.use(cors({
 app.use(express.json({ limit: "2mb" }));
 
 app.use("/uploads", express.static(uploadsRoot, {
-  maxAge: "7d",
+  maxAge: "1y",
   fallthrough: true,
   immutable: true,
 }));
