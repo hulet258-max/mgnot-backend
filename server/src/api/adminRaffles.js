@@ -8,6 +8,11 @@ const { raffleUploadsDir, uploadTempDir } = require("../config/uploads");
 const { optimizeRaffleImage, removeFiles } = require("../services/imageOptimizer");
 const { queueAdminBroadcast } = require("../services/telegramMessaging");
 const {
+  addPaymentNumber,
+  deletePaymentNumber,
+  listPaymentNumbers
+} = require("../services/paymentNumbers");
+const {
   ensureRafflesSeeded,
   finalizeDueRaffles,
   getRaffle,
@@ -191,6 +196,42 @@ router.post("/auth/login", (req, res) => {
 
 router.post("/auth/logout", requireAdmin, (_req, res) => res.json({ success: true }));
 router.use(requireAdmin);
+
+router.get("/payment-numbers", async (_req, res) => {
+  try {
+    return res.json({ success: true, paymentNumbers: await listPaymentNumbers() });
+  } catch (error) {
+    return res.status(500).json({ success: false, error: "Could not load payment phone numbers." });
+  }
+});
+
+router.post("/payment-numbers", async (req, res) => {
+  try {
+    const paymentNumber = await addPaymentNumber(req.body || {});
+    await audit(req, "payment_number.created", paymentNumber.id, {
+      phone: paymentNumber.phone,
+      label: paymentNumber.label
+    });
+    req.app.get("io")?.emit("payment_numbers_updated", { reason: "created", at: new Date().toISOString() });
+    return res.status(201).json({ success: true, paymentNumber });
+  } catch (error) {
+    return res.status(error.status || 500).json({ success: false, error: error.message || "Could not add payment phone number." });
+  }
+});
+
+router.delete("/payment-numbers/:paymentNumberId", async (req, res) => {
+  try {
+    const paymentNumber = await deletePaymentNumber(req.params.paymentNumberId);
+    await audit(req, "payment_number.deleted", paymentNumber.id, {
+      phone: paymentNumber.phone,
+      label: paymentNumber.label
+    });
+    req.app.get("io")?.emit("payment_numbers_updated", { reason: "deleted", at: new Date().toISOString() });
+    return res.json({ success: true, deletedId: paymentNumber.id });
+  } catch (error) {
+    return res.status(error.status || 500).json({ success: false, error: error.message || "Could not delete payment phone number." });
+  }
+});
 
 router.post(
   "/raffle-control/media",

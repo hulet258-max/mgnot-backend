@@ -1,5 +1,6 @@
 const crypto = require("crypto");
 const express = require("express");
+const { listPaymentNumbers } = require("../services/paymentNumbers");
 const db = require("../config/postgres");
 const { redis } = require("../config/redis");
 const { verifyPayment } = require("./receiptService");
@@ -306,6 +307,14 @@ async function broadcast(req, raffleId, reason = "updated", extra = {}) {
     req.app.get("io")?.emit("raffle_updated", { raffleId: String(raffleId), reason, at: new Date().toISOString(), ...extra });
   }
 }
+
+router.get("/payment-numbers", async (_req, res) => {
+  try {
+    return res.json({ success: true, paymentNumbers: await listPaymentNumbers() });
+  } catch (error) {
+    return res.status(500).json({ success: false, error: "Failed to load payment phone numbers." });
+  }
+});
 
 router.get("/raffles", async (req, res) => {
   try {
