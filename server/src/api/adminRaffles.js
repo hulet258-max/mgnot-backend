@@ -13,6 +13,12 @@ const {
   listPaymentNumbers
 } = require("../services/paymentNumbers");
 const {
+  SESSION_SECONDS,
+  issueToken,
+  requireAdmin,
+  safeEqual
+} = require("../services/adminSession");
+const {
   ensureRafflesSeeded,
   finalizeDueRaffles,
   getRaffle,
@@ -23,7 +29,6 @@ const {
 } = require("./raffles");
 
 const router = express.Router();
-const SESSION_SECONDS = 8 * 60 * 60;
 const VALID_STATUSES = new Set(["draft", "open", "paused", "sold_out", "completed", "archived"]);
 const ALLOWED_IMAGE_TYPES = new Set(["image/jpeg", "image/png", "image/webp", "image/gif"]);
 
@@ -45,47 +50,6 @@ const mediaUpload = multer({
     return cb(null, true);
   }
 });
-
-function secret() {
-  return process.env.ADMIN_SESSION_SECRET || process.env.BOT_TOKEN || "local-admin-session-change-me";
-}
-
-function safeEqual(left, right) {
-  const a = Buffer.from(String(left));
-  const b = Buffer.from(String(right));
-  return a.length === b.length && crypto.timingSafeEqual(a, b);
-}
-
-function sign(value) {
-  return crypto.createHmac("sha256", secret()).update(value).digest("base64url");
-}
-
-function issueToken(username) {
-  const payload = Buffer.from(JSON.stringify({
-    sub: username,
-    role: "platform_admin",
-    exp: Math.floor(Date.now() / 1000) + SESSION_SECONDS
-  })).toString("base64url");
-  return `${payload}.${sign(payload)}`;
-}
-
-function readToken(token) {
-  const [payload, signature] = String(token || "").split(".");
-  if (!payload || !signature || !safeEqual(sign(payload), signature)) return null;
-  try {
-    const session = JSON.parse(Buffer.from(payload, "base64url").toString("utf8"));
-    return session.exp > Math.floor(Date.now() / 1000) ? session : null;
-  } catch (_) {
-    return null;
-  }
-}
-
-function requireAdmin(req, res, next) {
-  const session = readToken(String(req.get("authorization") || "").replace(/^Bearer\s+/i, ""));
-  if (!session) return res.status(401).json({ success: false, error: "Admin session is missing or expired." });
-  req.admin = session;
-  return next();
-}
 
 async function audit(req, action, entityId, detail = {}) {
   await db.collection("admin_audit").add({
@@ -195,6 +159,14 @@ router.post("/auth/login", (req, res) => {
 });
 
 router.post("/auth/logout", requireAdmin, (_req, res) => res.json({ success: true }));
+router.get("/auth/session", requireAdmin, (req, res) => res.json({
+  success: true,
+  admin: {
+    username: req.admin.sub,
+    role: req.admin.role
+  },
+  expiresAt: new Date(req.admin.exp * 1000).toISOString()
+}));
 router.use(requireAdmin);
 
 router.get("/payment-numbers", async (_req, res) => {
