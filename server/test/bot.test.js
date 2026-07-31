@@ -89,7 +89,7 @@ test("repeat /start refreshes profile without resetting account values", async (
   assert.equal(db.read().createdAt, "original");
 });
 
-test("/start welcome includes the configured frontend as a Web App button", async () => {
+test("/start welcome explains how to buy in Amharic and includes a Buy Ticket Web App button", async () => {
   const previousToken = process.env.BOT_TOKEN;
   const previousWebAppUrl = process.env.WEB_APP_URL;
   process.env.BOT_TOKEN = "test-token";
@@ -126,7 +126,19 @@ test("/start welcome includes the configured frontend as a Web App button", asyn
 
     const welcome = calls.find((call) => call.method === "sendMessage");
     assert.ok(welcome);
-    assert.match(welcome.payload.text, /^Welcome, Demo!/);
+    assert.match(welcome.payload.text, /^Demo, እንኳን ደህና መጡ!/);
+    assert.match(welcome.payload.text, /ትኬት ለመግዛት፦/);
+    assert.match(welcome.payload.text, /የሚፈልጉትን ዕቃ ይምረጡ።/);
+    assert.match(welcome.payload.text, /ክፍት የዕድል ቁጥር ይምረጡ።/);
+    assert.match(welcome.payload.text, /ትክክለኛውን የትኬት ዋጋ በቴሌብር ይክፈሉ።/);
+    assert.match(
+      welcome.payload.text,
+      /የቴሌብር መልዕክቱን፣ ሊንኩን ወይም ግልጽ ስክሪንሾት ያስገቡ።/
+    );
+    assert.equal(
+      welcome.payload.reply_markup.inline_keyboard[0][0].text,
+      "Buy Ticket"
+    );
     assert.equal(
       welcome.payload.reply_markup.inline_keyboard[0][0].web_app.url,
       "https://frontend.example.com/app"

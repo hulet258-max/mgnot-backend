@@ -65,15 +65,24 @@ function createBot(db) {
   bot.start(async (ctx) => {
     try {
       await registerTelegramUser(db, ctx.from);
-      const firstName = ctx.from?.first_name ? `, ${ctx.from.first_name}` : '';
+      const firstName = ctx.from?.first_name ? `${ctx.from.first_name}, ` : '';
 
-      await ctx.reply(`Welcome${firstName}! 👋\nTap below to open MGNOT.`, {
-        reply_markup: {
-          inline_keyboard: [
-            [{ text: 'Open MGNOT', web_app: { url: webAppUrl() } }]
-          ]
+      await ctx.reply(
+        `${firstName}እንኳን ደህና መጡ! 👋\n\n` +
+          'ትኬት ለመግዛት፦\n' +
+          '1. ከታች ያለውን “Buy Ticket” ቁልፍ ይጫኑ።\n' +
+          '2. የሚፈልጉትን ዕቃ ይምረጡ።\n' +
+          '3. ክፍት የዕድል ቁጥር ይምረጡ።\n' +
+          '4. ትክክለኛውን የትኬት ዋጋ በቴሌብር ይክፈሉ።\n' +
+          '5. ትኬትዎን ለማረጋገጥ የቴሌብር መልዕክቱን፣ ሊንኩን ወይም ግልጽ ስክሪንሾት ያስገቡ።',
+        {
+          reply_markup: {
+            inline_keyboard: [
+              [{ text: 'Buy Ticket', web_app: { url: webAppUrl() } }]
+            ]
+          }
         }
-      });
+      );
     } catch (err) {
       console.error('Bot /start error:', err);
       await ctx.reply(
