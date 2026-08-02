@@ -2,8 +2,15 @@ const test = require("node:test");
 const assert = require("node:assert/strict");
 
 const {
+  MENU_LABELS,
   createBot,
+  drawsMessage,
+  helpMessage,
+  loadDraws,
+  loadUserTickets,
   registerTelegramUser,
+  supportUrl,
+  ticketsMessage,
   webAppUrl,
 } = require("../src/bot/bot");
 const { maskPhone } = require("../src/services/telegramMessaging");
@@ -23,9 +30,7 @@ function memoryDb(initialUser) {
               };
             },
             async set(data, options) {
-              stored = options?.merge
-                ? { ...(stored || {}), ...data }
-                : { ...data };
+              stored = options?.merge ? { ...(stored || {}), ...data } : { ...data };
             },
           };
         },
@@ -33,6 +38,105 @@ function memoryDb(initialUser) {
     },
     read: () => stored,
   };
+}
+
+function raffleDb(raffles) {
+  const docs = raffles.map((raffle) => {
+    const { purchases = [], ...data } = raffle;
+    return {
+      id: raffle.id,
+      data: () => ({ ...data }),
+      ref: {
+        collection(name) {
+          assert.equal(name, "purchases");
+          return {
+            where(field, operator, userId) {
+              assert.deepEqual([field, operator], ["userId", "=="]);
+              return {
+                async get() {
+                  return {
+                    docs: purchases
+                      .filter((purchase) => String(purchase.userId) === String(userId))
+                      .map((purchase, index) => ({
+                        id: purchase.id || `purchase-${index}`,
+                        data: () => ({ ...purchase }),
+                      })),
+                  };
+                },
+              };
+            },
+          };
+        },
+      },
+    };
+  });
+
+  return {
+    collection(name) {
+      assert.equal(name, "raffles");
+      return { get: async () => ({ docs }) };
+    },
+  };
+}
+
+async function withBotEnvironment(run, overrides = {}) {
+  const previous = {
+    BOT_TOKEN: process.env.BOT_TOKEN,
+    WEB_APP_URL: process.env.WEB_APP_URL,
+    FRONTEND_URL: process.env.FRONTEND_URL,
+    SUPPORT_URL: process.env.SUPPORT_URL,
+  };
+  process.env.BOT_TOKEN = "test-token";
+  process.env.WEB_APP_URL = "https://frontend.example.com/app";
+  delete process.env.FRONTEND_URL;
+  delete process.env.SUPPORT_URL;
+  Object.entries(overrides).forEach(([key, value]) => {
+    if (value === undefined) delete process.env[key];
+    else process.env[key] = value;
+  });
+
+  try {
+    return await run();
+  } finally {
+    Object.entries(previous).forEach(([key, value]) => {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    });
+  }
+}
+
+function preparedBot(db, calls) {
+  const bot = createBot(db);
+  bot.botInfo = {
+    id: 1,
+    is_bot: true,
+    first_name: "MGNOT",
+    username: "mgnot_test_bot",
+  };
+  bot.context.telegram = {
+    sendMessage: async (chatId, text, payload) => {
+      calls.push({ chatId, text, ...payload });
+      return { message_id: calls.length };
+    },
+  };
+  return bot;
+}
+
+function messageUpdate(text, updateId = 1, chatType = "private") {
+  const update = {
+    update_id: updateId,
+    message: {
+      message_id: updateId,
+      date: Math.floor(Date.now() / 1000),
+      chat: { id: 42, type: chatType },
+      from: { id: 42, is_bot: false, first_name: "Demo" },
+      text,
+    },
+  };
+  if (text.startsWith("/")) {
+    update.message.entities = [{ offset: 0, length: text.length, type: "bot_command" }];
+  }
+  return update;
 }
 
 test("/start registration creates defaults without requiring a phone", async () => {
@@ -89,91 +193,193 @@ test("repeat /start refreshes profile without resetting account values", async (
   assert.equal(db.read().createdAt, "original");
 });
 
-test("/start welcome explains how to buy in Amharic and includes a Buy Ticket Web App button", async () => {
-  const previousToken = process.env.BOT_TOKEN;
-  const previousWebAppUrl = process.env.WEB_APP_URL;
-  process.env.BOT_TOKEN = "test-token";
-  process.env.WEB_APP_URL = "https://frontend.example.com/app";
-
-  try {
-    const bot = createBot(memoryDb());
-    bot.botInfo = {
-      id: 1,
-      is_bot: true,
-      first_name: "MGNOT",
-      username: "mgnot_test_bot",
-    };
-
+test("/start returns a persistent bilingual keyboard and inline Web App action", async () => {
+  await withBotEnvironment(async () => {
     const calls = [];
-    bot.context.telegram = {
-      sendMessage: async (chatId, text, payload) => {
-        calls.push({ method: "sendMessage", payload: { chatId, text, ...payload } });
-        return { message_id: 1 };
-      },
-    };
+    const bot = preparedBot(memoryDb(), calls);
+    await bot.handleUpdate(messageUpdate("/start"));
 
-    await bot.handleUpdate({
-      update_id: 1,
-      message: {
-        message_id: 1,
-        date: Math.floor(Date.now() / 1000),
-        chat: { id: 42, type: "private" },
-        from: { id: 42, is_bot: false, first_name: "Demo" },
-        text: "/start",
-        entities: [{ offset: 0, length: 6, type: "bot_command" }],
-      },
-    });
-
-    const welcome = calls.find((call) => call.method === "sendMessage");
-    assert.ok(welcome);
-    assert.match(welcome.payload.text, /^Demo, እንኳን ደህና መጡ!/);
-    assert.match(welcome.payload.text, /ትኬት ለመግዛት፦/);
-    assert.match(welcome.payload.text, /የሚፈልጉትን ዕቃ ይምረጡ።/);
-    assert.match(welcome.payload.text, /ክፍት የዕድል ቁጥር ይምረጡ።/);
-    assert.match(welcome.payload.text, /ትክክለኛውን የትኬት ዋጋ በቴሌብር ይክፈሉ።/);
-    assert.match(
-      welcome.payload.text,
-      /የቴሌብር መልዕክቱን፣ ሊንኩን ወይም ግልጽ ስክሪንሾት ያስገቡ።/
+    assert.equal(calls.length, 2);
+    assert.match(calls[0].text, /^Demo, እንኳን ደህና መጡ!/);
+    assert.equal(calls[0].reply_markup.is_persistent, true);
+    assert.equal(calls[0].reply_markup.resize_keyboard, true);
+    assert.deepEqual(
+      calls[0].reply_markup.keyboard.flat().map((button) => button.text),
+      [MENU_LABELS.buy, MENU_LABELS.tickets, MENU_LABELS.draws, MENU_LABELS.help]
     );
-    assert.equal(
-      welcome.payload.reply_markup.inline_keyboard[0][0].text,
-      "Buy Ticket"
-    );
-    assert.equal(
-      welcome.payload.reply_markup.inline_keyboard[0][0].web_app.url,
-      "https://frontend.example.com/app"
-    );
-  } finally {
-    if (previousToken === undefined) delete process.env.BOT_TOKEN;
-    else process.env.BOT_TOKEN = previousToken;
-    if (previousWebAppUrl === undefined) delete process.env.WEB_APP_URL;
-    else process.env.WEB_APP_URL = previousWebAppUrl;
-  }
+    assert.equal(calls[0].reply_markup.keyboard[0][0].web_app.url, "https://frontend.example.com/app");
+    assert.equal(calls[1].reply_markup.inline_keyboard[0][0].web_app.url, "https://frontend.example.com/app");
+  });
 });
 
-test("frontend URL falls back to FRONTEND_URL and rejects non-HTTP links", () => {
-  const previousWebAppUrl = process.env.WEB_APP_URL;
-  const previousFrontendUrl = process.env.FRONTEND_URL;
+test("Web App routes preserve a configured base path and unsafe URLs are rejected", async () => {
+  await withBotEnvironment(async () => {
+    assert.equal(webAppUrl(), "https://frontend.example.com/app");
+    assert.equal(webAppUrl("tickets"), "https://frontend.example.com/app/tickets");
+    assert.equal(webAppUrl("/draw/"), "https://frontend.example.com/app/draw");
 
-  try {
+    process.env.WEB_APP_URL = "javascript:alert(1)";
+    assert.throws(() => webAppUrl(), /HTTP\(S\)/);
+    process.env.WEB_APP_URL = "http://frontend.example.com";
+    assert.throws(() => webAppUrl(), /HTTPS/);
+  });
+});
+
+test("frontend URL falls back to FRONTEND_URL", async () => {
+  await withBotEnvironment(async () => {
     delete process.env.WEB_APP_URL;
     process.env.FRONTEND_URL = "https://frontend.example.com";
     assert.equal(webAppUrl(), "https://frontend.example.com/");
+  });
+});
 
-    process.env.FRONTEND_URL = "javascript:alert(1)";
-    assert.throws(() => webAppUrl(), /HTTP\(S\)/);
+test("support URL is optional and requires HTTPS when configured", async () => {
+  await withBotEnvironment(async () => {
+    assert.equal(supportUrl(), null);
+    process.env.SUPPORT_URL = "https://t.me/mgnot_support";
+    assert.equal(supportUrl(), "https://t.me/mgnot_support");
+    process.env.SUPPORT_URL = "tg://resolve?domain=mgnot_support";
+    assert.throws(() => supportUrl(), /HTTP\(S\)/);
+  });
+});
 
-    process.env.FRONTEND_URL = "http://frontend.example.com";
-    assert.throws(() => webAppUrl(), /HTTPS/);
+test("ticket lookup derives status without exposing another user's purchases", async () => {
+  const db = raffleDb([
+    {
+      id: "phone",
+      itemName: "Phone",
+      status: "open",
+      purchases: [
+        { userId: "42", status: "assigned", ticketNumber: 7, createdAt: "2026-08-02" },
+        { userId: "99", status: "assigned", ticketNumber: 8, createdAt: "2026-08-03" },
+      ],
+    },
+    {
+      id: "laptop",
+      itemName: "Laptop",
+      status: "completed",
+      winningNumber: 11,
+      purchases: [{ userId: "42", status: "assigned", ticketNumber: 11, createdAt: "2026-08-01" }],
+    },
+    {
+      id: "tv",
+      itemName: "TV",
+      status: "open",
+      purchases: [{ userId: "42", status: "pending_number", createdAt: "2026-07-31" }],
+    },
+  ]);
 
-    process.env.FRONTEND_URL = "http://localhost:3001";
-    assert.throws(() => webAppUrl(), /HTTPS/);
-  } finally {
-    if (previousWebAppUrl === undefined) delete process.env.WEB_APP_URL;
-    else process.env.WEB_APP_URL = previousWebAppUrl;
-    if (previousFrontendUrl === undefined) delete process.env.FRONTEND_URL;
-    else process.env.FRONTEND_URL = previousFrontendUrl;
-  }
+  const purchases = await loadUserTickets(db, 42);
+  const text = ticketsMessage(purchases);
+  assert.equal(purchases.length, 3);
+  assert.match(text, /Phone[\s\S]*#7[\s\S]*Active/);
+  assert.match(text, /Laptop[\s\S]*🏆 Winner/);
+  assert.match(text, /TV[\s\S]*Choose a number/);
+  assert.doesNotMatch(text, /#8/);
+  assert.match(ticketsMessage([]), /You do not have any tickets yet/);
+});
+
+test("ticket keyboard button and /tickets command use the same handler", async () => {
+  await withBotEnvironment(async () => {
+    const db = raffleDb([{
+      id: "phone",
+      itemName: "Phone",
+      status: "open",
+      purchases: [{ userId: "42", status: "assigned", ticketNumber: 7 }],
+    }]);
+    const calls = [];
+    const bot = preparedBot(db, calls);
+
+    await bot.handleUpdate(messageUpdate(MENU_LABELS.tickets, 1));
+    await bot.handleUpdate(messageUpdate("/tickets", 2));
+
+    assert.equal(calls.length, 2);
+    assert.equal(calls[0].text, calls[1].text);
+    assert.equal(calls[0].reply_markup.inline_keyboard[0][0].web_app.url, "https://frontend.example.com/app/tickets");
+  });
+});
+
+test("draw and help keyboard buttons match their commands and Help includes support", async () => {
+  await withBotEnvironment(async () => {
+    process.env.SUPPORT_URL = "https://t.me/mgnot_support";
+    const db = raffleDb([{
+      id: "phone",
+      itemName: "Phone",
+      status: "completed",
+      winningNumber: 7,
+      winner: { displayName: "Demo Winner" },
+      drawnAt: "2026-08-01T12:00:00Z",
+    }]);
+    const calls = [];
+    const bot = preparedBot(db, calls);
+
+    await bot.handleUpdate(messageUpdate(MENU_LABELS.draws, 1));
+    await bot.handleUpdate(messageUpdate("/draws", 2));
+    await bot.handleUpdate(messageUpdate(MENU_LABELS.help, 3));
+    await bot.handleUpdate(messageUpdate("/help", 4));
+
+    assert.equal(calls.length, 4);
+    assert.equal(calls[0].text, calls[1].text);
+    assert.equal(calls[0].reply_markup.inline_keyboard[0][0].web_app.url, "https://frontend.example.com/app/draw");
+    assert.equal(calls[2].text, calls[3].text);
+    assert.equal(calls[2].reply_markup.inline_keyboard[1][0].url, "https://t.me/mgnot_support");
+  });
+});
+
+test("draw summary sorts the upcoming draw and limits recent winners", async () => {
+  const db = raffleDb([
+    { id: "later", itemName: "Later", status: "open", drawAt: "2026-08-04T12:00:00Z" },
+    { id: "next", itemName: "Next", status: "sold_out", drawAt: "2026-08-03T12:00:00Z" },
+    ...[1, 2, 3, 4].map((number) => ({
+      id: `winner-${number}`,
+      itemName: `Prize ${number}`,
+      status: "completed",
+      winningNumber: number,
+      winner: { displayName: `Winner ${number}`, phone: `+25190000000${number}` },
+      drawnAt: `2026-07-${20 + number}T12:00:00Z`,
+    })),
+  ]);
+
+  const summary = await loadDraws(db);
+  const text = drawsMessage(summary);
+  assert.equal(summary.upcoming.id, "next");
+  assert.deepEqual(summary.winners.map((winner) => winner.id), ["winner-4", "winner-3", "winner-2"]);
+  assert.match(text, /Next/);
+  assert.match(text, /Prize 4: #4 — Winner 4/);
+  assert.doesNotMatch(text, /251900000004/);
+  assert.doesNotMatch(text, /Prize 1/);
+});
+
+test("draw and ticket empty states are bilingual", () => {
+  assert.match(drawsMessage({ upcoming: null, winners: [] }), /No upcoming draw right now/);
+  assert.match(drawsMessage({ upcoming: null, winners: [] }), /ገና የተጠናቀቀ ዕጣ የለም/);
+  assert.match(ticketsMessage([]), /እስካሁን ምንም ትኬት የለዎትም/);
+  assert.match(helpMessage(), /ትክክለኛውን ዋጋ በቴሌብር/);
+});
+
+test("account-specific commands reject group chats", async () => {
+  await withBotEnvironment(async () => {
+    const calls = [];
+    const bot = preparedBot({ collection: () => { throw new Error("must not query"); } }, calls);
+    await bot.handleUpdate(messageUpdate("/tickets", 1, "group"));
+    assert.equal(calls.length, 1);
+    assert.match(calls[0].text, /private chat/);
+  });
+});
+
+test("ticket database failures return a safe retry message", async () => {
+  await withBotEnvironment(async () => {
+    const calls = [];
+    const bot = preparedBot({
+      collection() {
+        return { get: async () => { throw new Error("database password leaked"); } };
+      },
+    }, calls);
+    await bot.handleUpdate(messageUpdate("/tickets"));
+    assert.equal(calls.length, 1);
+    assert.match(calls[0].text, /Could not load your tickets/);
+    assert.doesNotMatch(calls[0].text, /password/);
+  });
 });
 
 test("winner notifications obscure the final two phone digits", () => {
