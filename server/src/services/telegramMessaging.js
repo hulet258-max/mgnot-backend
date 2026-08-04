@@ -25,8 +25,8 @@ function maskPhone(phone) {
   return characters.join("") || "Not provided";
 }
 
-function itemPhoto(raffle) {
-  const image = String(raffle?.coverImageUrl || "");
+function imagePhoto(imageUrl) {
+  const image = String(imageUrl || "");
   if (/^https:\/\//i.test(image)) return image;
   if (image.startsWith("/uploads/raffles/")) {
     const companion = telegramCompanionPath(image, raffleUploadsDir);
@@ -35,6 +35,10 @@ function itemPhoto(raffle) {
     if (fs.existsSync(localPath)) return Input.fromLocalFile(localPath);
   }
   return null;
+}
+
+function itemPhoto(raffle) {
+  return imagePhoto(raffle?.coverImageUrl);
 }
 
 async function sendWithRetry(telegram, recipient, payload, attempt = 0) {
@@ -131,9 +135,9 @@ async function queueDrawReminderNotification(raffleId) {
   return result;
 }
 
-function queueAdminBroadcast({ recipients, message, raffle, buttonLabel }) {
+function queueAdminBroadcast({ recipients, message, raffle, buttonLabel, imageUrl }) {
   return enqueueBroadcast(recipients, () => ({
-    photo: itemPhoto(raffle),
+    photo: imagePhoto(imageUrl) || itemPhoto(raffle),
     text: message,
     reply_markup: {
       inline_keyboard: [[{

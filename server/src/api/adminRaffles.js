@@ -473,18 +473,33 @@ router.get("/messaging/audience", async (_req, res) => {
   }
 });
 
-router.post("/messaging/send", async (req, res) => {
-  try {
+router.post(
+  "/messaging/send",
+  (req, res, next) => {
+    mediaUpload.single("image")(req, res, (error) => {
+      if (!error) return next();
+      return res.status(error.status || 400).json({
+        success: false,
+        error: error.code === "LIMIT_FILE_SIZE"
+          ? "The message image must be 6 MB or smaller."
+          : error.message || "Could not upload the message image."
+      });
+    });
+  },
+  async (req, res) => {
+    const generatedFiles = [];
+    let imageCommitted = false;
+    try {
     const message = cleanText(req.body?.message, 900);
     const audience = cleanText(req.body?.audience, 30) || "all";
     const raffleId = cleanText(req.body?.raffleId, 160);
     const buttonLabel = cleanText(req.body?.buttonLabel, 40);
-    if (!message) return res.status(400).json({ success: false, error: "Message text is required." });
+    if (!message) throw Object.assign(new Error("Message text is required."), { status: 400 });
     if (!["all", "bought", "not_bought"].includes(audience)) {
-      return res.status(400).json({ success: false, error: "Audience filter is invalid." });
+      throw Object.assign(new Error("Audience filter is invalid."), { status: 400 });
     }
     if (audience !== "all" && !raffleId) {
-      return res.status(400).json({ success: false, error: "Choose an item for this audience filter." });
+      throw Object.assign(new Error("Choose an item for this audience filter."), { status: 400 });
     }
 
     const usersSnapshot = await db.collection("users").get();
@@ -492,7 +507,7 @@ router.post("/messaging/send", async (req, res) => {
     let raffle = null;
     if (raffleId) {
       raffle = await getRaffle(raffleId);
-      if (!raffle) return res.status(404).json({ success: false, error: "Selected raffle item was not found." });
+      if (!raffle) throw Object.assign(new Error("Selected raffle item was not found."), { status: 404 });
       const purchases = await db.collection("raffles").doc(raffleId).collection("purchases").get();
       purchases.docs.forEach((doc) => purchasedUserIds.add(String((doc.data() || {}).userId || "")));
     }
@@ -504,31 +519,46 @@ router.post("/messaging/send", async (req, res) => {
         (audience === "bought" && purchasedUserIds.has(userId)) ||
         (audience === "not_bought" && !purchasedUserIds.has(userId))
       );
+    let imageUrl = null;
+    if (req.file) {
+      const optimized = await optimizeRaffleImage(req.file.path, raffleUploadsDir);
+      generatedFiles.push(...optimized.files);
+      imageUrl = optimized.url;
+    }
     const jobRef = await db.collection("broadcast_jobs").add({
       audience,
       raffleId: raffleId || null,
       message,
+      imageUrl,
       recipientCount: recipients.length,
       status: "queued",
       actor: req.admin?.sub || "admin",
       createdAt: new Date().toISOString()
     });
+    imageCommitted = true;
 
-    queueAdminBroadcast({ recipients, message, raffle, buttonLabel })
+    queueAdminBroadcast({ recipients, message, raffle, buttonLabel, imageUrl })
       .then((result) => jobRef.set({ status: "completed", ...result, completedAt: new Date().toISOString() }, { merge: true }))
       .catch((error) => jobRef.set({ status: "failed", error: error.message, completedAt: new Date().toISOString() }, { merge: true }));
 
     await audit(req, "message.queued", jobRef.id, {
       audience,
       raffleId: raffleId || null,
+      imageUrl,
       recipients: recipients.length
     });
     return res.status(202).json({ success: true, jobId: jobRef.id, recipients: recipients.length });
-  } catch (error) {
-    console.error("POST /api/admin/messaging/send:", error);
-    return res.status(500).json({ success: false, error: "Could not queue Telegram message." });
+    } catch (error) {
+      console.error("POST /api/admin/messaging/send:", error);
+      if (!imageCommitted) await removeFiles(generatedFiles);
+      if (req.file?.path) await removeFiles([req.file.path]);
+      return res.status(error.status || 500).json({
+        success: false,
+        error: error.status ? error.message : "Could not queue Telegram message."
+      });
+    }
   }
-});
+);
 
 router.get("/raffle-control/audit", async (_req, res) => {
   try {
