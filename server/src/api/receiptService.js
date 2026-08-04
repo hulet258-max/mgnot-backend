@@ -1,6 +1,6 @@
 const SERVICE_URLS = [
-    "https://bot1-rec.nkhcks.easypanel.host/verify",
-    "https://robikcafe.et/verify"
+    "https://carta-re.v3rao3.easypanel.host/verify"
+    
 ];
 
 const REQUEST_TIMEOUT_MS = 15000;

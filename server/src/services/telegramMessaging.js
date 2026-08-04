@@ -12,7 +12,10 @@ const wait = (milliseconds) => new Promise((resolve) => setTimeout(resolve, mill
 
 function webAppUrl(raffleId) {
   const base = String(process.env.WEB_APP_URL || process.env.FRONTEND_URL || "").replace(/\/+$/, "");
-  return raffleId ? `${base}/?raffle=${encodeURIComponent(raffleId)}` : base;
+  if (!raffleId) return base;
+  const target = new URL(base);
+  target.searchParams.set("raffle", String(raffleId));
+  return target.toString();
 }
 
 function maskPhone(phone) {
@@ -71,7 +74,16 @@ function enqueueBroadcast(recipients, payloadFactory) {
 
     for (const recipient of uniqueRecipients) {
       try {
-        await sendWithRetry(telegram, recipient, payloadFactory(recipient));
+        const payload = payloadFactory(recipient);
+        if (payload.productPhoto) {
+          await sendWithRetry(telegram, recipient, {
+            photo: payload.productPhoto,
+            text: undefined,
+            reply_markup: undefined
+          });
+          await wait(SEND_INTERVAL_MS);
+        }
+        await sendWithRetry(telegram, recipient, payload);
         result.sent += 1;
       } catch (error) {
         result.failed += 1;
@@ -135,9 +147,10 @@ async function queueDrawReminderNotification(raffleId) {
   return result;
 }
 
-function queueAdminBroadcast({ recipients, message, raffle, buttonLabel, imageUrl }) {
+function queueAdminBroadcast({ recipients, message, raffle, buttonLabel, imageUrl, includeProductPhoto }) {
   return enqueueBroadcast(recipients, () => ({
     photo: imagePhoto(imageUrl) || itemPhoto(raffle),
+    productPhoto: includeProductPhoto && imageUrl ? itemPhoto(raffle) : null,
     text: message,
     reply_markup: {
       inline_keyboard: [[{

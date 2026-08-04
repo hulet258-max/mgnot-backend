@@ -494,6 +494,7 @@ router.post(
     const audience = cleanText(req.body?.audience, 30) || "all";
     const raffleId = cleanText(req.body?.raffleId, 160);
     const buttonLabel = cleanText(req.body?.buttonLabel, 40);
+    const includeProductPhoto = String(req.body?.includeProductPhoto || "").toLowerCase() === "true";
     if (!message) throw Object.assign(new Error("Message text is required."), { status: 400 });
     if (!["all", "bought", "not_bought"].includes(audience)) {
       throw Object.assign(new Error("Audience filter is invalid."), { status: 400 });
@@ -530,6 +531,7 @@ router.post(
       raffleId: raffleId || null,
       message,
       imageUrl,
+      includeProductPhoto,
       recipientCount: recipients.length,
       status: "queued",
       actor: req.admin?.sub || "admin",
@@ -537,7 +539,7 @@ router.post(
     });
     imageCommitted = true;
 
-    queueAdminBroadcast({ recipients, message, raffle, buttonLabel, imageUrl })
+    queueAdminBroadcast({ recipients, message, raffle, buttonLabel, imageUrl, includeProductPhoto })
       .then((result) => jobRef.set({ status: "completed", ...result, completedAt: new Date().toISOString() }, { merge: true }))
       .catch((error) => jobRef.set({ status: "failed", error: error.message, completedAt: new Date().toISOString() }, { merge: true }));
 
@@ -545,6 +547,7 @@ router.post(
       audience,
       raffleId: raffleId || null,
       imageUrl,
+      includeProductPhoto,
       recipients: recipients.length
     });
     return res.status(202).json({ success: true, jobId: jobRef.id, recipients: recipients.length });
