@@ -213,6 +213,7 @@ test("/start sends the image, short instructions, and inline Web App action toge
     assert.ok(calls[0].caption.length <= 1024);
     assert.doesNotMatch(calls[0].caption, /How to buy|Before paying|English/);
     assert.equal(calls[0].reply_markup.inline_keyboard[0][0].web_app.url, "https://frontend.example.com/app");
+    assert.equal(calls[0].reply_markup.inline_keyboard[0][0].style, "danger");
   });
 });
 
@@ -239,8 +240,9 @@ test("Buy Ticket keyboard button sends instructions with an inline Web App actio
     await bot.handleUpdate(messageUpdate(MENU_LABELS.buy));
 
     assert.equal(calls.length, 1);
-    assert.equal(calls[0].text, helpMessage());
+    assert.equal(calls[0].text, startMessage());
     assert.equal(calls[0].reply_markup.inline_keyboard[0][0].web_app.url, "https://frontend.example.com/app");
+    assert.equal(calls[0].reply_markup.inline_keyboard[0][0].style, "danger");
   });
 });
 

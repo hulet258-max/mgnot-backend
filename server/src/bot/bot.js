@@ -69,8 +69,10 @@ function mainKeyboard() {
   };
 }
 
-function inlineWebAppButton(text, route = "") {
-  return { inline_keyboard: [[{ text, web_app: { url: webAppUrl(route) } }]] };
+function inlineWebAppButton(text, route = "", style) {
+  const button = { text, web_app: { url: webAppUrl(route) } };
+  if (style) button.style = style;
+  return { inline_keyboard: [[button]] };
 }
 
 function formatDrawTime(value) {
@@ -270,7 +272,7 @@ function createBot(db) {
       await registerTelegramUser(db, ctx.from);
       const firstName = ctx.from?.first_name ? `${ctx.from.first_name}, ` : "";
       const introMessage = startMessage(firstName);
-      const introButtons = inlineWebAppButton("🎟 Buy Ticket | ትኬት ይግዙ");
+      const introButtons = inlineWebAppButton("🎟 Buy Ticket | ትኬት ይግዙ", "", "danger");
       try {
         await ctx.replyWithPhoto(
           { source: INTRO_IMAGE_PATH },
@@ -302,8 +304,8 @@ function createBot(db) {
   const showBuy = async (ctx) => {
     try {
       if (!(await privateChatRequired(ctx))) return;
-      await ctx.reply(helpMessage(), {
-        reply_markup: inlineWebAppButton("🎟 Buy Ticket | ትኬት ይግዙ"),
+      await ctx.reply(startMessage(), {
+        reply_markup: inlineWebAppButton("🎟 Buy Ticket | ትኬት ይግዙ", "", "danger"),
       });
     } catch (error) {
       console.error("Bot buy error:", error);
@@ -326,7 +328,11 @@ function createBot(db) {
   const showHelp = async (ctx) => {
     try {
       if (!(await privateChatRequired(ctx))) return;
-      const buttons = [[{ text: "🎟 Buy Ticket | ትኬት ይግዙ", web_app: { url: webAppUrl() } }]];
+      const buttons = [[{
+        text: "🎟 Buy Ticket | ትኬት ይግዙ",
+        web_app: { url: webAppUrl() },
+        style: "danger",
+      }]];
       const configuredSupportUrl = supportUrl();
       if (configuredSupportUrl) {
         buttons.push([{ text: "💬 Contact Support | ድጋፍ", url: configuredSupportUrl }]);
