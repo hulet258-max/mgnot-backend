@@ -1,5 +1,6 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
+const path = require("node:path");
 
 const {
   MENU_LABELS,
@@ -114,8 +115,12 @@ function preparedBot(db, calls) {
     username: "mgnot_test_bot",
   };
   bot.context.telegram = {
+    sendPhoto: async (chatId, photo, payload) => {
+      calls.push({ type: "photo", chatId, photo, ...payload });
+      return { message_id: calls.length };
+    },
     sendMessage: async (chatId, text, payload) => {
-      calls.push({ chatId, text, ...payload });
+      calls.push({ type: "message", chatId, text, ...payload });
       return { message_id: calls.length };
     },
   };
@@ -200,7 +205,9 @@ test("/start returns a persistent bilingual keyboard and inline Web App action",
     await bot.handleUpdate(messageUpdate("/start"));
 
     assert.equal(calls.length, 2);
-    assert.match(calls[0].text, /^Demo, እንኳን ደህና መጡ!/);
+    assert.equal(calls[0].type, "photo");
+    assert.equal(path.basename(calls[0].photo.source), "intro.png");
+    assert.match(calls[0].caption, /^Demo, እንኳን ደህና መጡ!/);
     assert.equal(calls[0].reply_markup.is_persistent, true);
     assert.equal(calls[0].reply_markup.resize_keyboard, true);
     assert.deepEqual(
@@ -208,6 +215,23 @@ test("/start returns a persistent bilingual keyboard and inline Web App action",
       [MENU_LABELS.buy, MENU_LABELS.tickets, MENU_LABELS.draws, MENU_LABELS.help]
     );
     assert.equal(calls[0].reply_markup.keyboard[0][0].web_app, undefined);
+    assert.equal(calls[1].text, helpMessage());
+    assert.equal(calls[1].reply_markup.inline_keyboard[0][0].web_app.url, "https://frontend.example.com/app");
+  });
+});
+
+test("/start still sends instructions and buttons when the intro photo fails", async () => {
+  await withBotEnvironment(async () => {
+    const calls = [];
+    const bot = preparedBot(memoryDb(), calls);
+    bot.context.telegram.sendPhoto = async () => { throw new Error("photo unavailable"); };
+
+    await bot.handleUpdate(messageUpdate("/start"));
+
+    assert.equal(calls.length, 2);
+    assert.match(calls[0].text, /^Demo, እንኳን ደህና መጡ!/);
+    assert.equal(calls[0].reply_markup.is_persistent, true);
+    assert.equal(calls[1].text, helpMessage());
     assert.equal(calls[1].reply_markup.inline_keyboard[0][0].web_app.url, "https://frontend.example.com/app");
   });
 });
@@ -367,7 +391,9 @@ test("draw and ticket empty states are bilingual", () => {
   assert.match(drawsMessage({ upcoming: null, winners: [] }), /No upcoming draw right now/);
   assert.match(drawsMessage({ upcoming: null, winners: [] }), /ገና የተጠናቀቀ ዕጣ የለም/);
   assert.match(ticketsMessage([]), /እስካሁን ምንም ትኬት የለዎትም/);
-  assert.match(helpMessage(), /ትክክለኛውን ዋጋ በቴሌብር/);
+  assert.match(helpMessage(), /ትክክለኛ የትኬት ዋጋ/);
+  assert.match(helpMessage(), /አጋር ሱቅ/);
+  assert.match(helpMessage(), /Your trust matters to us/);
 });
 
 test("account-specific commands reject group chats", async () => {

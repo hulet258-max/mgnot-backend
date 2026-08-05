@@ -1,6 +1,9 @@
 // server/src/bot/bot.js
 
+const path = require("path");
 const { Telegraf } = require("telegraf");
+
+const INTRO_IMAGE_PATH = path.join(__dirname, "intro.png");
 
 const MENU_LABELS = Object.freeze({
   buy: "🎟 ትኬት ይግዙ | Buy Ticket",
@@ -177,12 +180,29 @@ function drawsMessage({ upcoming, winners }) {
 
 function helpMessage() {
   return [
-    "ℹ️ ትኬት እንዴት እንደሚገዙ | How to buy a ticket",
+    "🎟 በMGNOT ትኬት እንዴት ይገዛሉ?",
     "",
-    "1. Buy Ticket የሚለውን ይጫኑ። | Tap Buy Ticket.",
-    "2. የሚፈልጉትን ዕቃና ክፍት ቁጥር ይምረጡ። | Choose an item and available number.",
-    "3. ትክክለኛውን ዋጋ በቴሌብር ይክፈሉ። | Pay the exact price with Telebirr.",
-    "4. መልዕክቱን፣ ሊንኩን ወይም ስክሪንሾቱን ያስገቡ። | Submit the message, link, or screenshot.",
+    "1. ከታች ያለውን “ትኬት ይግዙ | Buy Ticket” ቁልፍ በመጫን MGNOTን ይክፈቱ።",
+    "2. የሚፈልጉትን ዕቃ ይምረጡ እና ዋጋውን፣ መግለጫውን፣ ፎቶዎቹን እና የዕጣ ቀኑን ይመልከቱ።",
+    "3. ከክፍት የትኬት ቁጥሮች ውስጥ የሚፈልጉትን እድለኛ ቁጥር ይምረጡ።",
+    "4. በMGNOT መተግበሪያ ውስጥ የታየውን ትክክለኛ የትኬት ዋጋ በቴሌብር ወደተጠቀሰው የክፍያ ቁጥር ይላኩ።",
+    "5. የቴሌብር ማረጋገጫ መልዕክት/ሊንክ ያስገቡ ወይም ግልጽ ስክሪንሾት ይላኩ።",
+    "6. ክፍያው ከተረጋገጠ በኋላ ትኬትዎ “የእኔ ትኬቶች | My Tickets” ውስጥ ይታያል።",
+    "7. የዕጣውን ቀን እና አሸናፊዎችን “ዕጣና አሸናፊዎች | Draws” ውስጥ መከታተል ይችላሉ።",
+    "",
+    "ከመክፈልዎ በፊት የምኞት ድጋፍን ማነጋገር ወይም በዕቃው ገጽ ላይ የተጠቀሰውን አጋር ሱቅ በአካል በመጎብኘት ዕቃውን ማየትና መረጃውን ማረጋገጥ ይችላሉ። በምኞት መተግበሪያ ውስጥ ያልተጠቀሰ የክፍያ ቁጥር ገንዘብ አይላኩ።",
+    "",
+    "🎟 How to buy a ticket on MGNOT",
+    "",
+    "1. Tap “Buy Ticket | ትኬት ይግዙ” below to open MGNOT.",
+    "2. Choose an item and review its price, description, photos, and draw date.",
+    "3. Select your preferred lucky number from the available ticket numbers.",
+    "4. Send the exact ticket price through Telebirr to a payment number displayed inside the MGNOT app.",
+    "5. Paste the Telebirr confirmation message/link or upload a clear screenshot.",
+    "6. After verification, your confirmed ticket will appear under “My Tickets.”",
+    "7. Follow upcoming draws and winners from “Draws.”",
+    "",
+    "🛡 Your trust matters to us. Before paying, you may contact MGNOT support or visit the partner shop listed on the item page to see the product and verify the information in person. Never send money to a payment number that is not displayed inside the official MGNOT app.",
   ].join("\n");
 }
 
@@ -235,11 +255,17 @@ function createBot(db) {
       if (!(await privateChatRequired(ctx))) return;
       await registerTelegramUser(db, ctx.from);
       const firstName = ctx.from?.first_name ? `${ctx.from.first_name}, ` : "";
-      await ctx.reply(
-        `${firstName}እንኳን ደህና መጡ! 👋\nWelcome to MGNOT. Use the buttons below to buy a ticket, check your tickets, view draws, or get help.`,
-        { reply_markup: mainKeyboard() }
-      );
-      await ctx.reply("MGNOTን ይክፈቱ | Open MGNOT", {
+      const welcomeMessage = `${firstName}እንኳን ደህና መጡ! 👋\nWelcome to MGNOT. Use the buttons below to buy a ticket, check your tickets, view draws, or get help.`;
+      try {
+        await ctx.replyWithPhoto(
+          { source: INTRO_IMAGE_PATH },
+          { caption: welcomeMessage, reply_markup: mainKeyboard() }
+        );
+      } catch (photoError) {
+        console.warn("Bot intro photo error:", photoError);
+        await ctx.reply(welcomeMessage, { reply_markup: mainKeyboard() });
+      }
+      await ctx.reply(helpMessage(), {
         reply_markup: inlineWebAppButton("🎟 Buy Ticket | ትኬት ይግዙ"),
       });
     } catch (error) {
