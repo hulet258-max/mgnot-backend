@@ -56,7 +56,7 @@ function supportUrl() {
 function mainKeyboard() {
   return {
     keyboard: [
-      [{ text: MENU_LABELS.buy, web_app: { url: webAppUrl() } }],
+      [{ text: MENU_LABELS.buy }],
       [{ text: MENU_LABELS.tickets }, { text: MENU_LABELS.draws }],
       [{ text: MENU_LABELS.help }],
     ],
@@ -261,6 +261,18 @@ function createBot(db) {
     }
   };
 
+  const showBuy = async (ctx) => {
+    try {
+      if (!(await privateChatRequired(ctx))) return;
+      await ctx.reply(helpMessage(), {
+        reply_markup: inlineWebAppButton("🎟 Buy Ticket | ትኬት ይግዙ"),
+      });
+    } catch (error) {
+      console.error("Bot buy error:", error);
+      await ctx.reply("MGNOTን አሁን መክፈት አልተቻለም። እባክዎ እንደገና ይሞክሩ።\nCould not open MGNOT. Please try again.");
+    }
+  };
+
   const showDraws = async (ctx) => {
     try {
       if (!(await privateChatRequired(ctx))) return;
@@ -288,6 +300,7 @@ function createBot(db) {
     }
   };
 
+  bot.hears(MENU_LABELS.buy, showBuy);
   bot.command("tickets", showTickets);
   bot.hears(MENU_LABELS.tickets, showTickets);
   bot.command("draws", showDraws);

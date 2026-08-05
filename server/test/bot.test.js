@@ -207,8 +207,21 @@ test("/start returns a persistent bilingual keyboard and inline Web App action",
       calls[0].reply_markup.keyboard.flat().map((button) => button.text),
       [MENU_LABELS.buy, MENU_LABELS.tickets, MENU_LABELS.draws, MENU_LABELS.help]
     );
-    assert.equal(calls[0].reply_markup.keyboard[0][0].web_app.url, "https://frontend.example.com/app");
+    assert.equal(calls[0].reply_markup.keyboard[0][0].web_app, undefined);
     assert.equal(calls[1].reply_markup.inline_keyboard[0][0].web_app.url, "https://frontend.example.com/app");
+  });
+});
+
+test("Buy Ticket keyboard button sends instructions with an inline Web App action", async () => {
+  await withBotEnvironment(async () => {
+    const calls = [];
+    const bot = preparedBot(memoryDb(), calls);
+
+    await bot.handleUpdate(messageUpdate(MENU_LABELS.buy));
+
+    assert.equal(calls.length, 1);
+    assert.equal(calls[0].text, helpMessage());
+    assert.equal(calls[0].reply_markup.inline_keyboard[0][0].web_app.url, "https://frontend.example.com/app");
   });
 });
 

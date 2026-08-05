@@ -1,5 +1,5 @@
 const SERVICE_URLS = [
-    "https://bot1-rec.nkhcks.easypanel.host/verify",
+   
     "https://robikcafe.et/verify"
 ];
 
