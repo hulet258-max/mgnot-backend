@@ -206,6 +206,20 @@ function helpMessage() {
   ].join("\n");
 }
 
+function startMessage(firstName = "") {
+  return [
+    `${firstName}እንኳን ደህና መጡ! 👋`,
+    "",
+    "🎟 ትኬት ለመግዛት:",
+    "1. “ትኬት ይግዙ” የሚለውን ቁልፍ ይጫኑ።",
+    "2. ዕቃና የትኬት ቁጥር ይምረጡ።",
+    "3. ዋጋውን በቴሌብር ከፍለው የክፍያ ማረጋገጫውን ይላኩ።",
+    "✅ ትኬትዎ ከተረጋገጠ “የእኔ ትኬቶች” ውስጥ ይታያል።",
+    "",
+    "🛡 ለማረጋገጥ የMGNOT ድጋፍን ይደውሉ ወይም በዕቃው ገጽ የተጠቀሰውን አጋር ሱቅ ይጎብኙ።",
+  ].join("\n");
+}
+
 async function registerTelegramUser(db, from) {
   if (!from?.id) throw new Error("Telegram user ID missing from /start update");
 
@@ -255,19 +269,17 @@ function createBot(db) {
       if (!(await privateChatRequired(ctx))) return;
       await registerTelegramUser(db, ctx.from);
       const firstName = ctx.from?.first_name ? `${ctx.from.first_name}, ` : "";
-      const welcomeMessage = `${firstName}እንኳን ደህና መጡ! 👋\nWelcome to MGNOT. Use the buttons below to buy a ticket, check your tickets, view draws, or get help.`;
+      const introMessage = startMessage(firstName);
+      const introButtons = inlineWebAppButton("🎟 Buy Ticket | ትኬት ይግዙ");
       try {
         await ctx.replyWithPhoto(
           { source: INTRO_IMAGE_PATH },
-          { caption: welcomeMessage, reply_markup: mainKeyboard() }
+          { caption: introMessage, reply_markup: introButtons }
         );
       } catch (photoError) {
         console.warn("Bot intro photo error:", photoError);
-        await ctx.reply(welcomeMessage, { reply_markup: mainKeyboard() });
+        await ctx.reply(introMessage, { reply_markup: introButtons });
       }
-      await ctx.reply(helpMessage(), {
-        reply_markup: inlineWebAppButton("🎟 Buy Ticket | ትኬት ይግዙ"),
-      });
     } catch (error) {
       console.error("Bot /start error:", error);
       await ctx.reply("MGNOTን አሁን መክፈት አልተቻለም። እባክዎ ቆይተው ይሞክሩ።\nWe could not open MGNOT. Please try again shortly.");
@@ -418,6 +430,7 @@ module.exports = {
   loadUserTickets,
   mainKeyboard,
   registerTelegramUser,
+  startMessage,
   startBot,
   supportUrl,
   ticketsMessage,

@@ -10,6 +10,7 @@ const {
   loadDraws,
   loadUserTickets,
   registerTelegramUser,
+  startMessage,
   supportUrl,
   ticketsMessage,
   webAppUrl,
@@ -198,25 +199,20 @@ test("repeat /start refreshes profile without resetting account values", async (
   assert.equal(db.read().createdAt, "original");
 });
 
-test("/start returns a persistent bilingual keyboard and inline Web App action", async () => {
+test("/start sends the image, short instructions, and inline Web App action together", async () => {
   await withBotEnvironment(async () => {
     const calls = [];
     const bot = preparedBot(memoryDb(), calls);
     await bot.handleUpdate(messageUpdate("/start"));
 
-    assert.equal(calls.length, 2);
+    assert.equal(calls.length, 1);
     assert.equal(calls[0].type, "photo");
     assert.equal(path.basename(calls[0].photo.source), "intro.png");
     assert.match(calls[0].caption, /^Demo, እንኳን ደህና መጡ!/);
-    assert.equal(calls[0].reply_markup.is_persistent, true);
-    assert.equal(calls[0].reply_markup.resize_keyboard, true);
-    assert.deepEqual(
-      calls[0].reply_markup.keyboard.flat().map((button) => button.text),
-      [MENU_LABELS.buy, MENU_LABELS.tickets, MENU_LABELS.draws, MENU_LABELS.help]
-    );
-    assert.equal(calls[0].reply_markup.keyboard[0][0].web_app, undefined);
-    assert.equal(calls[1].text, helpMessage());
-    assert.equal(calls[1].reply_markup.inline_keyboard[0][0].web_app.url, "https://frontend.example.com/app");
+    assert.equal(calls[0].caption, startMessage("Demo, "));
+    assert.ok(calls[0].caption.length <= 1024);
+    assert.doesNotMatch(calls[0].caption, /How to buy|Before paying|English/);
+    assert.equal(calls[0].reply_markup.inline_keyboard[0][0].web_app.url, "https://frontend.example.com/app");
   });
 });
 
@@ -228,11 +224,10 @@ test("/start still sends instructions and buttons when the intro photo fails", a
 
     await bot.handleUpdate(messageUpdate("/start"));
 
-    assert.equal(calls.length, 2);
+    assert.equal(calls.length, 1);
     assert.match(calls[0].text, /^Demo, እንኳን ደህና መጡ!/);
-    assert.equal(calls[0].reply_markup.is_persistent, true);
-    assert.equal(calls[1].text, helpMessage());
-    assert.equal(calls[1].reply_markup.inline_keyboard[0][0].web_app.url, "https://frontend.example.com/app");
+    assert.equal(calls[0].text, startMessage("Demo, "));
+    assert.equal(calls[0].reply_markup.inline_keyboard[0][0].web_app.url, "https://frontend.example.com/app");
   });
 });
 
